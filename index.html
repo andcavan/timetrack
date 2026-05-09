@@ -70,6 +70,12 @@ input,select,button,textarea{font-family:var(--font)}
 .qh-btn:hover,.qh-btn.active{background:rgba(58,123,232,.13);border-color:var(--accent);color:var(--accent)}
 .add-btn{background:var(--accent);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
 .add-btn:hover{background:var(--accent-h)}
+.project-dropdown{position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.project-dropdown-item{padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)}
+.project-dropdown-item:last-child{border-bottom:none}
+.project-dropdown-item:hover{background:rgba(58,123,232,.15);color:var(--accent)}
+.project-dropdown-item .proj-code{font-weight:600;margin-right:6px}
+.project-dropdown-item .proj-client{color:var(--text-dim);font-size:11px;margin-top:2px}
 
 /* Week */
 .week-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:24px}
@@ -234,11 +240,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.08)}
     <div class="quick-section">
       <h2 class="section-title">⚡ Inserimento Rapido</h2>
       <div class="quick-grid">
-        <div class="field-group">
+        <div class="field-group" style="position:relative">
           <label>Commessa</label>
-          <select id="qe-project" onchange="onQeProjectChange3()">
-            <option value="">— Seleziona Commessa —</option>
-          </select>
+          <input type="text" id="qe-project-search" placeholder="Cerca commessa..." autocomplete="off" oninput="filterProjects()" onfocus="filterProjects()" onblur="hideProjectDropdown()">
+          <div id="qe-project-dropdown" class="project-dropdown" style="display:none"></div>
+          <input type="hidden" id="qe-project">
         </div>
         <div class="field-group"><label>Cliente</label><input type="text" id="qe-client-display" disabled style="background:var(--card);cursor:not-allowed"></div>
         <div class="field-group"><label>Attività</label><select id="qe-activity" disabled><option value="">—</option></select></div>
@@ -802,12 +808,8 @@ function setView(v){
 // ═══ TIMESHEET ═══
 function renderTimesheet(){
   selectedWeek=selectedWeek||getWeekStart(todayStr());
-  const projs=db.projects.filter(p=>p.status==='active');
-  const sel=document.getElementById('qe-project');
-  sel.innerHTML='<option value="">— Seleziona Commessa —</option>'+projs.map(p=>{
-    const cl=db.clients.find(c=>c.id===p.clientId);
-    return`<option value="${p.id}">${p.code} - ${p.name} (${cl?.name||'?'})</option>`;
-  }).join('');
+  document.getElementById('qe-project-search').value='';
+  document.getElementById('qe-project').value='';
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
   renderQH();renderWeek();
 }
@@ -826,6 +828,22 @@ function onQeProjectChange3(){
 function renderQH(){
   const cur=parseFloat(document.getElementById('qe-hours').value);
   document.getElementById('quick-hours').innerHTML=[1,2,4,6,8].map(h=>`<button class="qh-btn ${cur===h?'active':''}" onclick="document.getElementById('qe-hours').value=${h};renderQH()">${h}h</button>`).join('');
+}
+function filterProjects(){
+  const q=document.getElementById('qe-project-search').value.toLowerCase();
+  const dd=document.getElementById('qe-project-dropdown');
+  const projs=db.projects.filter(p=>p.status==='active');
+  const matches=q?projs.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return(p.code+' '+p.name+' '+(cl?.name||'')).toLowerCase().includes(q);}):projs;
+  if(!matches.length){dd.innerHTML='<div class="project-dropdown-item" style="color:var(--text-dim)">Nessun risultato</div>';dd.style.display='block';return}
+  dd.innerHTML=matches.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="project-dropdown-item" onmousedown="selectProject('${p.id}','${(p.code+' - '+p.name).replace(/'/g,"\\'")}')"><span class="proj-code">${p.code}</span>${p.name}<div class="proj-client">${cl?.name||''}</div></div>`;}).join('');
+  dd.style.display='block';
+}
+function hideProjectDropdown(){setTimeout(()=>{const dd=document.getElementById('qe-project-dropdown');if(dd)dd.style.display='none';},150)}
+function selectProject(id,label){
+  document.getElementById('qe-project').value=id;
+  document.getElementById('qe-project-search').value=label;
+  document.getElementById('qe-project-dropdown').style.display='none';
+  onQeProjectChange3();
 }
 function resolveRate(userId,clientId,projectId,date){
   const rates=db.rates||[];
@@ -1679,6 +1697,9 @@ window.resetUserPassword=resetUserPassword;
 window.setView=setView;
 window.toggleMgmt=toggleMgmt;
 window.renderQH=renderQH;
+window.filterProjects=filterProjects;
+window.hideProjectDropdown=hideProjectDropdown;
+window.selectProject=selectProject;
 window.addRate=addRate;
 window.editRateModal=editRateModal;
 window.saveRateEdit=saveRateEdit;
