@@ -87,8 +87,9 @@ input,select,button,textarea{font-family:var(--font)}
 .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;min-height:160px}
 @media(max-width:900px){.week-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:500px){.week-grid{grid-template-columns:1fr 1fr}}
-.day-col{background:var(--bg);border-radius:10px;padding:8px;min-width:0;border:1px solid transparent}
+.day-col{background:var(--bg);border-radius:10px;padding:8px;min-width:0;border:1px solid transparent;cursor:pointer}
 .day-col.today{border-color:var(--accent);background:rgba(58,123,232,.08);box-shadow:0 0 0 2px rgba(58,123,232,.2)}
+.day-col.selected{border-color:#22c55e;background:rgba(34,197,94,.10);box-shadow:0 0 0 2px rgba(34,197,94,.18)}
 .day-header{text-align:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .day-name{display:block;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em}
 .day-date{display:block;font-size:20px;font-weight:800;margin-top:2px}
@@ -388,7 +389,7 @@ const defaultDB={
   nextProjectNum:5
 };
 
-let db,currentUser=null,currentView='timesheet',selectedWeek,activeMgmt=null;
+let db,currentUser=null,currentView='timesheet',selectedWeek,selectedDay,activeMgmt=null;
 
 // ═══ SUPABASE CONFIG ═══
 // ⚠️ SOSTITUISCI CON I TUOI DATI SUPABASE!
@@ -811,6 +812,7 @@ function renderTimesheet(){
   document.getElementById('qe-project-search').value='';
   document.getElementById('qe-project').value='';
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
+  selectedDay=document.getElementById('qe-date').value;
   renderQH();renderWeek();
 }
 function onQeProjectChange3(){
@@ -886,6 +888,7 @@ function addEntry(){
 // ═══ WEEK ═══
 function changeWeek(dir){const d=new Date(selectedWeek);d.setDate(d.getDate()+dir*7);selectedWeek=d.toISOString().split('T')[0];renderWeek()}
 function goToday(){selectedWeek=getWeekStart(todayStr());renderWeek()}
+function selectDay(date){selectedDay=date;document.getElementById('qe-date').value=date;renderWeek()}
 function renderWeek(){
   const days=getWeekDays(selectedWeek);
   document.getElementById('week-label').textContent=fmtDate(days[0])+' — '+fmtDate(days[6]);
@@ -894,7 +897,7 @@ function renderWeek(){
   const td=todayStr();
   document.getElementById('week-grid').innerHTML=days.map((d,i)=>{
     const de=entries.filter(e=>e.date===d),dh=de.reduce((s,e)=>s+e.hours,0);
-    return`<div class="day-col ${d===td?'today':''}"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
+    return`<div class="day-col ${d===td?'today':''} ${d===selectedDay?'selected':''}" onclick="selectDay('${d}')"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
   }).join('');
 }
 function renderCard(e){
