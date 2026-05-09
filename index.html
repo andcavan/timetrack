@@ -70,6 +70,12 @@ input,select,button,textarea{font-family:var(--font)}
 .qh-btn:hover,.qh-btn.active{background:rgba(58,123,232,.13);border-color:var(--accent);color:var(--accent)}
 .add-btn{background:var(--accent);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
 .add-btn:hover{background:var(--accent-h)}
+.project-dropdown{position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.project-dropdown-item{padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)}
+.project-dropdown-item:last-child{border-bottom:none}
+.project-dropdown-item:hover{background:rgba(58,123,232,.15);color:var(--accent)}
+.project-dropdown-item .proj-code{font-weight:600;margin-right:6px}
+.project-dropdown-item .proj-client{color:var(--text-dim);font-size:11px;margin-top:2px}
 
 /* Week */
 .week-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:24px}
@@ -81,8 +87,9 @@ input,select,button,textarea{font-family:var(--font)}
 .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;min-height:160px}
 @media(max-width:900px){.week-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:500px){.week-grid{grid-template-columns:1fr 1fr}}
-.day-col{background:var(--bg);border-radius:10px;padding:8px;min-width:0;border:1px solid transparent}
+.day-col{background:var(--bg);border-radius:10px;padding:8px;min-width:0;border:1px solid transparent;cursor:pointer}
 .day-col.today{border-color:var(--accent);background:rgba(58,123,232,.08);box-shadow:0 0 0 2px rgba(58,123,232,.2)}
+.day-col.selected{border-color:#22c55e;background:rgba(34,197,94,.10);box-shadow:0 0 0 2px rgba(34,197,94,.18)}
 .day-header{text-align:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .day-name{display:block;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em}
 .day-date{display:block;font-size:20px;font-weight:800;margin-top:2px}
@@ -234,11 +241,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.08)}
     <div class="quick-section">
       <h2 class="section-title">⚡ Inserimento Rapido</h2>
       <div class="quick-grid">
-        <div class="field-group">
+        <div class="field-group" style="position:relative">
           <label>Commessa</label>
-          <select id="qe-project" onchange="onQeProjectChange3()">
-            <option value="">— Seleziona Commessa —</option>
-          </select>
+          <input type="text" id="qe-project-search" placeholder="Cerca commessa..." autocomplete="off" oninput="filterProjects()" onfocus="filterProjects()" onblur="hideProjectDropdown()">
+          <div id="qe-project-dropdown" class="project-dropdown" style="display:none"></div>
+          <input type="hidden" id="qe-project">
         </div>
         <div class="field-group"><label>Cliente</label><input type="text" id="qe-client-display" disabled style="background:var(--card);cursor:not-allowed"></div>
         <div class="field-group"><label>Attività</label><select id="qe-activity" disabled><option value="">—</option></select></div>
@@ -382,7 +389,7 @@ const defaultDB={
   nextProjectNum:5
 };
 
-let db,currentUser=null,currentView='timesheet',selectedWeek,activeMgmt=null;
+let db,currentUser=null,currentView='timesheet',selectedWeek,selectedDay,activeMgmt=null;
 
 // ═══ SUPABASE CONFIG ═══
 // ⚠️ SOSTITUISCI CON I TUOI DATI SUPABASE!
@@ -802,13 +809,10 @@ function setView(v){
 // ═══ TIMESHEET ═══
 function renderTimesheet(){
   selectedWeek=selectedWeek||getWeekStart(todayStr());
-  const projs=db.projects.filter(p=>p.status==='active');
-  const sel=document.getElementById('qe-project');
-  sel.innerHTML='<option value="">— Seleziona Commessa —</option>'+projs.map(p=>{
-    const cl=db.clients.find(c=>c.id===p.clientId);
-    return`<option value="${p.id}">${p.code} - ${p.name} (${cl?.name||'?'})</option>`;
-  }).join('');
+  document.getElementById('qe-project-search').value='';
+  document.getElementById('qe-project').value='';
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
+  selectedDay=document.getElementById('qe-date').value;
   renderQH();renderWeek();
 }
 function onQeProjectChange3(){
@@ -826,6 +830,22 @@ function onQeProjectChange3(){
 function renderQH(){
   const cur=parseFloat(document.getElementById('qe-hours').value);
   document.getElementById('quick-hours').innerHTML=[1,2,4,6,8].map(h=>`<button class="qh-btn ${cur===h?'active':''}" onclick="document.getElementById('qe-hours').value=${h};renderQH()">${h}h</button>`).join('');
+}
+function filterProjects(){
+  const q=document.getElementById('qe-project-search').value.toLowerCase();
+  const dd=document.getElementById('qe-project-dropdown');
+  const projs=db.projects.filter(p=>p.status==='active');
+  const matches=q?projs.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return(p.code+' '+p.name+' '+(cl?.name||'')).toLowerCase().includes(q);}):projs;
+  if(!matches.length){dd.innerHTML='<div class="project-dropdown-item" style="color:var(--text-dim)">Nessun risultato</div>';dd.style.display='block';return}
+  dd.innerHTML=matches.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="project-dropdown-item" onmousedown="selectProject('${p.id}','${(p.code+' - '+p.name).replace(/'/g,"\\'")}')"><span class="proj-code">${p.code}</span>${p.name}<div class="proj-client">${cl?.name||''}</div></div>`;}).join('');
+  dd.style.display='block';
+}
+function hideProjectDropdown(){setTimeout(()=>{const dd=document.getElementById('qe-project-dropdown');if(dd)dd.style.display='none';},150)}
+function selectProject(id,label){
+  document.getElementById('qe-project').value=id;
+  document.getElementById('qe-project-search').value=label;
+  document.getElementById('qe-project-dropdown').style.display='none';
+  onQeProjectChange3();
 }
 function resolveRate(userId,clientId,projectId,date){
   const rates=db.rates||[];
@@ -868,6 +888,7 @@ function addEntry(){
 // ═══ WEEK ═══
 function changeWeek(dir){const d=new Date(selectedWeek);d.setDate(d.getDate()+dir*7);selectedWeek=d.toISOString().split('T')[0];renderWeek()}
 function goToday(){selectedWeek=getWeekStart(todayStr());renderWeek()}
+function selectDay(date){selectedDay=date;document.getElementById('qe-date').value=date;renderWeek()}
 function renderWeek(){
   const days=getWeekDays(selectedWeek);
   document.getElementById('week-label').textContent=fmtDate(days[0])+' — '+fmtDate(days[6]);
@@ -876,7 +897,7 @@ function renderWeek(){
   const td=todayStr();
   document.getElementById('week-grid').innerHTML=days.map((d,i)=>{
     const de=entries.filter(e=>e.date===d),dh=de.reduce((s,e)=>s+e.hours,0);
-    return`<div class="day-col ${d===td?'today':''}"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
+    return`<div class="day-col ${d===td?'today':''} ${d===selectedDay?'selected':''}" onclick="selectDay('${d}')"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
   }).join('');
 }
 function renderCard(e){
@@ -1679,6 +1700,9 @@ window.resetUserPassword=resetUserPassword;
 window.setView=setView;
 window.toggleMgmt=toggleMgmt;
 window.renderQH=renderQH;
+window.filterProjects=filterProjects;
+window.hideProjectDropdown=hideProjectDropdown;
+window.selectProject=selectProject;
 window.addRate=addRate;
 window.editRateModal=editRateModal;
 window.saveRateEdit=saveRateEdit;
