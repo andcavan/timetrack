@@ -355,14 +355,14 @@ const App = {};
 const DB_KEY='timetrack_v5';
 const defaultDB={
   users:[
-    {id:'u1',name:'Marco Rossi',username:'marco',role:'admin',hourlyRate:45,color:'#E85D3A'},
-    {id:'u2',name:'Laura Bianchi',username:'laura',role:'operator',hourlyRate:38,color:'#3A7BE8'},
-    {id:'u3',name:'Paolo Verdi',username:'paolo',role:'operator',hourlyRate:35,color:'#2EAE6D'},
+    {id:'u1',name:'Marco Rossi',username:'marco',role:'admin',color:'#E85D3A'},
+    {id:'u2',name:'Laura Bianchi',username:'laura',role:'operator',color:'#3A7BE8'},
+    {id:'u3',name:'Paolo Verdi',username:'paolo',role:'operator',color:'#2EAE6D'},
   ],
   clients:[
-    {id:'c1',name:'Acme Corp',clientRate:75,active:true,referente:'Giovanni Bianchi'},
-    {id:'c2',name:'Beta Industries',clientRate:85,active:true,referente:'Maria Rossi'},
-    {id:'c3',name:'Gamma Tech',clientRate:90,active:true,referente:'Luca Verdi'},
+    {id:'c1',name:'Acme Corp',active:true,referente:'Giovanni Bianchi'},
+    {id:'c2',name:'Beta Industries',active:true,referente:'Maria Rossi'},
+    {id:'c3',name:'Gamma Tech',active:true,referente:'Luca Verdi'},
   ],
   projects:[
     {id:'p1',clientId:'c1',name:'Restyling Sito Web',code:'001/26',referente:'Paolo Neri',status:'active',budget:5000,budgetHours:120,deadline:'2026-09-30',
@@ -375,6 +375,9 @@ const defaultDB={
       activities:[{id:'a11',name:'Analisi'},{id:'a12',name:'Sviluppo'},{id:'a13',name:'Deploy'},{id:'a14',name:'Riunione'}]},
   ],
   entries:[],
+  rates:[
+    {id:'r1',userId:null,clientId:null,projectId:null,costRate:35,clientRate:75,from:'2025-01-01',to:null},
+  ],
   nextId:100,
   nextProjectNum:5
 };
@@ -398,13 +401,20 @@ function updateSyncStatus(status){
   el.innerHTML=labels[status];
 }
 
+function migrateDB(){
+  if(!db)return;
+  if(!db.rates)db.rates=[];
+  // Rimuove campi tariffa obsoleti da users/clients se presenti da versioni precedenti
+  db.users?.forEach(u=>{delete u.hourlyRate});
+  db.clients?.forEach(c=>{delete c.clientRate});
+}
 async function loadDB(){
   // Sempre prima dal localStorage per partenza veloce
   let hasLocal=false;
   let hasPendingLocal=false;
   try{
     const r=localStorage.getItem(DB_KEY);
-    if(r){db=JSON.parse(r);hasLocal=true}
+    if(r){db=JSON.parse(r);hasLocal=true;migrateDB()}
     hasPendingLocal=localStorage.getItem(DB_KEY+'_pending')==='1';
   }catch(e){}
   
@@ -437,6 +447,7 @@ async function loadDB(){
             // Cloud più recente: prendi cloud (perdiamo modifiche locali)
             db=data.data;
             lastUpdate=data.updated_at;
+            migrateDB();
             localStorage.setItem(DB_KEY,JSON.stringify(db));
             localStorage.removeItem(DB_KEY+'_pending');
           }
@@ -444,6 +455,7 @@ async function loadDB(){
           // Caso normale: usa cloud
           db=data.data;
           lastUpdate=data.updated_at;
+          migrateDB();
           localStorage.setItem(DB_KEY,JSON.stringify(db));
         }
       }
@@ -815,6 +827,28 @@ function renderQH(){
   const cur=parseFloat(document.getElementById('qe-hours').value);
   document.getElementById('quick-hours').innerHTML=[1,2,4,6,8].map(h=>`<button class="qh-btn ${cur===h?'active':''}" onclick="document.getElementById('qe-hours').value=${h};renderQH()">${h}h</button>`).join('');
 }
+function resolveRate(userId,clientId,projectId,date){
+  const rates=db.rates||[];
+  const active=rates.filter(r=>r.from<=date&&(r.to===null||r.to>=date));
+  const priority=[
+    r=>r.userId===userId&&r.projectId===projectId&&r.clientId===null,
+    r=>r.userId===userId&&r.clientId===clientId&&r.projectId===null,
+    r=>r.userId===null&&r.projectId===projectId&&r.clientId===null,
+    r=>r.userId===userId&&r.clientId===null&&r.projectId===null,
+    r=>r.userId===null&&r.clientId===clientId&&r.projectId===null,
+    r=>r.userId===null&&r.clientId===null&&r.projectId===null,
+  ];
+  let costRate=0,clientRate=0,costFound=false,clientFound=false;
+  for(const match of priority){
+    const candidates=active.filter(match).sort((a,b)=>b.from.localeCompare(a.from));
+    for(const c of candidates){
+      if(!costFound&&c.costRate!=null){costRate=c.costRate;costFound=true}
+      if(!clientFound&&c.clientRate!=null){clientRate=c.clientRate;clientFound=true}
+    }
+    if(costFound&&clientFound)break;
+  }
+  return{costRate,clientRate};
+}
 function addEntry(){
   const projectId=document.getElementById('qe-project').value;
   const activityId=document.getElementById('qe-activity').value;
@@ -825,8 +859,8 @@ function addEntry(){
   if(isNaN(hours)||hours<=0||hours>24){showToast('Ore non valide','error');return}
   const proj=db.projects.find(p=>p.id===projectId);
   if(!proj){showToast('Commessa non valida','error');return}
-  const client=db.clients.find(c=>c.id===proj.clientId);
-  db.entries.push({id:gid(),userId:currentUser.id,clientId:proj.clientId,projectId,activityId,date,hours,note:note||'',costRate:currentUser.hourlyRate,clientRate:client?.clientRate||0,createdAt:new Date().toISOString()});
+  const r=resolveRate(currentUser.id,proj.clientId,projectId,date);
+  db.entries.push({id:gid(),userId:currentUser.id,clientId:proj.clientId,projectId,activityId,date,hours,note:note||'',costRate:r.costRate,clientRate:r.clientRate,createdAt:new Date().toISOString()});
   saveDB();document.getElementById('qe-hours').value='';document.getElementById('qe-note').value='';
   showToast(`${hours}h registrate!`);renderQH();renderWeek();
 }
@@ -872,6 +906,8 @@ document.addEventListener('click', function(event) {
     case 'delete-user': delUser(id); break;
     case 'reset-pwd': resetUserPassword(id); break;
     case 'edit-user': editUserModal(id); break;
+    case 'edit-rate': editRateModal(id); break;
+    case 'delete-rate': delRate(id); break;
   }
 });
 function editEntryModal(id){
@@ -915,9 +951,6 @@ function saveEntryEdit(id){
   e.activityId=document.getElementById('me-activity').value;
   e.date=document.getElementById('me-date').value;
   e.hours=h;e.note=document.getElementById('me-note').value;
-  // Update rates
-  const cl=db.clients.find(c=>c.id===e.clientId);
-  e.clientRate=cl?.clientRate||0;
   saveDB();closeModal();showToast('Aggiornata');renderWeek();
 }
 function delEntry(id){if(!confirm('Eliminare questa registrazione?'))return;db.entries=db.entries.filter(e=>e.id!==id);saveDB();showToast('Rimossa');renderWeek()}
@@ -1400,13 +1433,13 @@ async function executeReset(){
       name:selectedAdmin.name,
       username:selectedAdmin.username||selectedAdmin.name.toLowerCase().split(' ')[0],
       role:'admin',
-      hourlyRate:selectedAdmin.hourlyRate||50,
       color:selectedAdmin.color||'#3A7BE8',
-      passwordHash:selectedAdmin.passwordHash // Mantiene la password
+      passwordHash:selectedAdmin.passwordHash
     }],
     clients:[],
     projects:[],
-    entries:[]
+    entries:[],
+    rates:[]
   };
   
   // Salva locale
@@ -1472,27 +1505,108 @@ function renderProjectReport(){
 
 // ═══ MANAGE ═══
 function renderManage(){
-  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'backup',l:'💾 Backup'}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
+  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:'💰 Tariffe'},{id:'backup',l:'💾 Backup'}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
   renderMC();
 }
 function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;renderManage()}
 function renderMC(){
   const el=document.getElementById('mgmt-content');if(!activeMgmt){el.innerHTML='';return}
   if(activeMgmt==='client'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${c.name}</span><span class="mgmt-item-meta">Ref: ${c.referente||'—'}</span>${c.email?`<span class="mgmt-item-meta">${c.email}</span>`:''}<span class="mgmt-item-meta">€${c.clientRate}/h</span><span class="status-badge" style="background:${c.active?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${c.active?'var(--green)':'#888'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">✏</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><input id="mc-rate" type="number" placeholder="Tariffa €/h"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${c.name}</span><span class="mgmt-item-meta">Ref: ${c.referente||'—'}</span>${c.email?`<span class="mgmt-item-meta">${c.email}</span>`:''}<span class="status-badge" style="background:${c.active?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${c.active?'var(--green)':'#888'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">✏</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='project'){
     el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.projects.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${p.code||'—'} - ${p.name}</span><span class="mgmt-item-meta">${cl?.name||'?'}</span><span class="mgmt-item-meta">Ref: ${p.referente||'—'}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}">${p.status}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${a.name}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`}).join('')}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${u.name}</span><span class="mgmt-item-meta">@${u.username||'—'}</span>${u.email?`<span class="mgmt-item-meta">${u.email}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta">€${u.hourlyRate}/h</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><input id="mu-rate" type="number" placeholder="Tariffa €/h"><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${u.name}</span><span class="mgmt-item-meta">@${u.username||'—'}</span>${u.email?`<span class="mgmt-item-meta">${u.email}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
+  } else if(activeMgmt==='rates'){
+    renderRatesTab();
   } else if(activeMgmt==='backup'){
     renderBackupTab();
   }
 }
 
+// ═══ RATES TAB ═══
+function renderRatesTab(){
+  if(!db.rates)db.rates=[];
+  const el=document.getElementById('mgmt-content');
+  const active=db.rates.filter(r=>r.to===null).sort((a,b)=>b.from.localeCompare(a.from));
+  const history=db.rates.filter(r=>r.to!==null).sort((a,b)=>b.from.localeCompare(a.from));
+  const uName=id=>id?db.users.find(u=>u.id===id)?.name||'?':'(tutti)';
+  const cName=id=>id?db.clients.find(c=>c.id===id)?.name||'?':'(tutti)';
+  const pName=id=>id?db.projects.find(p=>p.id===id)?.name||'?':'(tutte)';
+  const rowHTML=r=>`<div class="mgmt-item" style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto auto;gap:8px;align-items:center">
+    <span class="mgmt-item-meta">${uName(r.userId)}</span>
+    <span class="mgmt-item-meta">${cName(r.clientId)}</span>
+    <span class="mgmt-item-meta">${pName(r.projectId)}</span>
+    <span class="mgmt-item-meta">${r.costRate!=null?'€'+r.costRate+'/h':'—'}</span>
+    <span class="mgmt-item-meta">${r.clientRate!=null?'€'+r.clientRate+'/h':'—'}</span>
+    <span class="mgmt-item-meta" style="font-size:11px">dal ${r.from}${r.to?' al '+r.to:''}</span>
+    <div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-rate" data-id="${r.id}">✏</button><button class="mini-btn danger" data-action="delete-rate" data-id="${r.id}">🗑</button></div>
+  </div>`;
+  el.innerHTML=`<div class="mgmt-panel">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto;gap:8px;padding:4px 0 8px;font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase">
+      <span>Utente</span><span>Cliente</span><span>Commessa</span><span>Costo</span><span>Ricavo</span><span>Validità</span>
+    </div>
+    <div class="mgmt-list">${active.map(rowHTML).join('')||'<div style="color:var(--text-dim);padding:12px 0">Nessuna tariffa attiva</div>'}</div>
+    ${history.length?`<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Storico (${history.length})</summary><div class="mgmt-list" style="margin-top:8px;opacity:.7">${history.map(rowHTML).join('')}</div></details>`:''}
+    <div class="mgmt-form" style="margin-top:16px">
+      <select id="nr-user"><option value="">— Utente (tutti) —</option>${db.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>
+      <select id="nr-client"><option value="">— Cliente (tutti) —</option>${db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
+      <select id="nr-project"><option value="">— Commessa (tutte) —</option>${db.projects.map(p=>`<option value="${p.id}">${p.code} ${p.name}</option>`).join('')}</select>
+      <input id="nr-cost" type="number" step="0.5" placeholder="Costo €/h (vuoto=non impostato)">
+      <input id="nr-rev" type="number" step="0.5" placeholder="Ricavo €/h (vuoto=non impostato)">
+      <input id="nr-from" type="date" placeholder="Valida dal" title="Valida dal">
+      <input id="nr-to" type="date" placeholder="Valida fino al (vuoto=attiva)" title="Valida fino al">
+      <button class="add-btn-sm" onclick="addRate()">+ Aggiungi Tariffa</button>
+    </div>
+  </div>`;
+}
+function addRate(){
+  if(!db.rates)db.rates=[];
+  const userId=document.getElementById('nr-user').value||null;
+  const clientId=document.getElementById('nr-client').value||null;
+  const projectId=document.getElementById('nr-project').value||null;
+  const costVal=document.getElementById('nr-cost').value;
+  const revVal=document.getElementById('nr-rev').value;
+  const from=document.getElementById('nr-from').value;
+  const to=document.getElementById('nr-to').value||null;
+  if(!from){showToast('Data inizio obbligatoria','error');return}
+  if(costVal===''&&revVal===''){showToast('Inserisci almeno un valore (costo o ricavo)','error');return}
+  const costRate=costVal!==''?parseFloat(costVal):null;
+  const clientRate=revVal!==''?parseFloat(revVal):null;
+  db.rates.push({id:gid(),userId,clientId,projectId,costRate,clientRate,from,to});
+  saveDB();showToast('Tariffa aggiunta');renderMC();
+}
+function editRateModal(id){
+  const r=db.rates.find(x=>x.id===id);if(!r)return;
+  openModal(`<h3>✏ Modifica Tariffa</h3>
+    <div class="modal-field"><label>Utente</label><select id="er-user"><option value="">— Tutti —</option>${db.users.map(u=>`<option value="${u.id}" ${u.id===r.userId?'selected':''}>${u.name}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Cliente</label><select id="er-client"><option value="">— Tutti —</option>${db.clients.map(c=>`<option value="${c.id}" ${c.id===r.clientId?'selected':''}>${c.name}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Commessa</label><select id="er-project"><option value="">— Tutte —</option>${db.projects.map(p=>`<option value="${p.id}" ${p.id===r.projectId?'selected':''}>${p.code} ${p.name}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Costo €/h</label><input type="number" id="er-cost" step="0.5" value="${r.costRate!=null?r.costRate:''}" placeholder="vuoto = non impostato"></div>
+    <div class="modal-field"><label>Ricavo €/h</label><input type="number" id="er-rev" step="0.5" value="${r.clientRate!=null?r.clientRate:''}" placeholder="vuoto = non impostato"></div>
+    <div class="modal-field"><label>Valida dal</label><input type="date" id="er-from" value="${r.from}"></div>
+    <div class="modal-field"><label>Valida fino al</label><input type="date" id="er-to" value="${r.to||''}"></div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveRateEdit('${id}')">Salva</button></div>`);
+}
+function saveRateEdit(id){
+  const r=db.rates.find(x=>x.id===id);if(!r)return;
+  r.userId=document.getElementById('er-user').value||null;
+  r.clientId=document.getElementById('er-client').value||null;
+  r.projectId=document.getElementById('er-project').value||null;
+  const cv=document.getElementById('er-cost').value;
+  const rv=document.getElementById('er-rev').value;
+  r.costRate=cv!==''?parseFloat(cv):null;
+  r.clientRate=rv!==''?parseFloat(rv):null;
+  r.from=document.getElementById('er-from').value;
+  r.to=document.getElementById('er-to').value||null;
+  saveDB();closeModal();showToast('Tariffa aggiornata');renderMC();
+}
+function delRate(id){if(!confirm('Eliminare questa tariffa?'))return;db.rates=db.rates.filter(r=>r.id!==id);saveDB();showToast('Eliminata');renderMC()}
+
 // CRUD Clients
-function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim(),r=parseFloat(document.getElementById('mc-rate').value)||0;if(!n){showToast('Nome richiesto','error');return}db.clients.push({id:gid(),name:n,referente:ref,email,clientRate:r,active:true});saveDB();showToast(n+' aggiunto');renderManage()}
-function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${c.name}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${c.referente||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${c.email||''}"></div><div class="modal-field"><label>Tariffa €/h</label><input type="number" id="ec-rate" value="${c.clientRate}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
-function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;c.name=document.getElementById('ec-name').value.trim();c.referente=document.getElementById('ec-ref').value.trim();c.email=document.getElementById('ec-email').value.trim();c.clientRate=parseFloat(document.getElementById('ec-rate').value)||0;c.active=document.getElementById('ec-active').value==='true';saveDB();closeModal();showToast('Aggiornato');renderManage()}
+function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim();if(!n){showToast('Nome richiesto','error');return}db.clients.push({id:gid(),name:n,referente:ref,email,active:true});saveDB();showToast(n+' aggiunto');renderManage()}
+function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${c.name}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${c.referente||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${c.email||''}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
+function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;c.name=document.getElementById('ec-name').value.trim();c.referente=document.getElementById('ec-ref').value.trim();c.email=document.getElementById('ec-email').value.trim();c.active=document.getElementById('ec-active').value==='true';saveDB();closeModal();showToast('Aggiornato');renderManage()}
 function delClient(id){if(!confirm('Eliminare il cliente e tutte le sue commesse e registrazioni?'))return;db.projects=db.projects.filter(p=>p.clientId!==id);db.entries=db.entries.filter(e=>e.clientId!==id);db.clients=db.clients.filter(c=>c.id!==id);saveDB();showToast('Eliminato');renderManage()}
 
 // CRUD Projects
@@ -1508,9 +1622,9 @@ function saveActEdit(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)retu
 function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const p=db.projects.find(x=>x.id===pid);if(!p)return;p.activities=p.activities.filter(a=>a.id!==aid);saveDB();showToast('Eliminata');renderManage()}
 
 // CRUD Users
-function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value,rate=parseFloat(document.getElementById('mu-rate').value)||0;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,hourlyRate:rate,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
-function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${u.name}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${u.username||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${u.email||''}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-field"><label>Tariffa €/h</label><input type="number" id="eu-rate" value="${u.hourlyRate}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
-function saveUserEdit(id){const u=db.users.find(x=>x.id===id);if(!u)return;u.name=document.getElementById('eu-name').value.trim();u.username=document.getElementById('eu-username').value.trim();u.email=document.getElementById('eu-email').value.trim();u.role=document.getElementById('eu-role').value;u.hourlyRate=parseFloat(document.getElementById('eu-rate').value)||0;saveDB();closeModal();showToast('Aggiornato');renderManage();renderLogin()}
+function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
+function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${u.name}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${u.username||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${u.email||''}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
+function saveUserEdit(id){const u=db.users.find(x=>x.id===id);if(!u)return;u.name=document.getElementById('eu-name').value.trim();u.username=document.getElementById('eu-username').value.trim();u.email=document.getElementById('eu-email').value.trim();u.role=document.getElementById('eu-role').value;saveDB();closeModal();showToast('Aggiornato');renderManage();renderLogin()}
 function delUser(id){if(db.users.length<=1){showToast('Serve almeno un utente','error');return}if(id===currentUser.id){showToast('Non puoi eliminare te stesso','error');return}if(!confirm('Eliminare questo utente e tutte le sue registrazioni?'))return;db.entries=db.entries.filter(e=>e.userId!==id);db.users=db.users.filter(u=>u.id!==id);saveDB();showToast('Eliminato');renderManage();renderLogin()}
 
 // ═══ IMPORT ═══
@@ -1565,6 +1679,10 @@ window.resetUserPassword=resetUserPassword;
 window.setView=setView;
 window.toggleMgmt=toggleMgmt;
 window.renderQH=renderQH;
+window.addRate=addRate;
+window.editRateModal=editRateModal;
+window.saveRateEdit=saveRateEdit;
+window.delRate=delRate;
 
 // ═══ INIT ═══
 (async function(){
