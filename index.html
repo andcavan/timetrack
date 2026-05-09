@@ -205,8 +205,24 @@ tr{border-bottom:1px solid rgba(42,46,59,.08)}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .quick-section,.week-section,.kpi-card,.breakdown-section,.mgmt-panel,.proj-card,.proj-donut-card{animation:fadeUp .35s ease}
+
+/* Export Report Modal */
+.export-modal{max-width:560px}
+.export-col-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.export-check-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .15s}
+.export-check-item:hover{border-color:var(--accent)}
+.export-check-item input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+.export-check-item label{font-size:13px;cursor:pointer;user-select:none}
+.export-section-title{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.07em;margin:16px 0 6px}
+.export-btn-pdf{background:#E84040;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;transition:opacity .15s}
+.export-btn-pdf:hover{opacity:.85}
+.export-btn-xls{background:#217346;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;transition:opacity .15s}
+.export-btn-xls:hover{opacity:.85}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:#888;box-shadow:0 4px 12px rgba(0,0,0,.3)">○ Caricamento...</div>
@@ -320,7 +336,8 @@ tr{border-bottom:1px solid rgba(42,46,59,.08)}
         <div style="display:flex;gap:8px;align-items:center">
           <button class="add-btn-sm" onclick="applyFilters()">🔍 Applica filtri</button>
           <button class="btn-ghost" onclick="resetFilters()" style="padding:8px 16px;font-size:13px">↺ Reset</button>
-          <span id="filter-summary" style="margin-left:auto;font-size:13px;color:var(--text-dim)"></span>
+          <button class="add-btn-sm" onclick="showExportModal()" style="margin-left:auto;background:var(--accent)">📊 Esporta Report</button>
+          <span id="filter-summary" style="font-size:13px;color:var(--text-dim)"></span>
         </div>
       </div>
       
@@ -1680,6 +1697,314 @@ window.goToday=goToday;
 window.changeWeek=changeWeek;
 window.addEntry=addEntry;
 window.exportJSON=exportJSON;
+
+// ═══ EXPORT REPORT ═══
+function _expPeriodLabel(){
+  const p=reportFilters.period;
+  const labels={
+    'current-month':'Mese corrente',
+    'last-month':'Mese scorso',
+    'current-year':'Anno corrente',
+    'last-year':'Anno scorso',
+    'all':'Tutto',
+    'custom':reportFilters.dateFrom&&reportFilters.dateTo?reportFilters.dateFrom+' → '+reportFilters.dateTo:'Personalizzato'
+  };
+  return labels[p]||p;
+}
+
+function showExportModal(){
+  const isAdmin=_a();
+  document.getElementById('exp-col-user-wrap').style.display=isAdmin?'':'none';
+  document.getElementById('exp-col-cost-wrap').style.display=isAdmin?'':'none';
+  document.getElementById('exp-col-revenue-wrap').style.display=isAdmin?'':'none';
+  if(!isAdmin){
+    document.getElementById('exp-col-user').checked=false;
+    document.getElementById('exp-col-cost').checked=false;
+    document.getElementById('exp-col-revenue').checked=false;
+    document.getElementById('exp-group').querySelector('option[value="user"]').style.display='none';
+  }
+  document.getElementById('exp-title').value='Report Ore - '+_expPeriodLabel();
+  document.getElementById('export-modal-overlay').style.display='flex';
+}
+
+function closeExportModal(){
+  document.getElementById('export-modal-overlay').style.display='none';
+}
+
+function _getExpConfig(){
+  return{
+    title:document.getElementById('exp-title').value||'Report Ore',
+    cols:{
+      date:document.getElementById('exp-col-date').checked,
+      user:document.getElementById('exp-col-user').checked,
+      client:document.getElementById('exp-col-client').checked,
+      project:document.getElementById('exp-col-project').checked,
+      activity:document.getElementById('exp-col-activity').checked,
+      hours:document.getElementById('exp-col-hours').checked,
+      cost:document.getElementById('exp-col-cost').checked,
+      revenue:document.getElementById('exp-col-revenue').checked,
+      note:document.getElementById('exp-col-note').checked
+    },
+    groupBy:document.getElementById('exp-group').value,
+    showGroupTotals:document.getElementById('exp-show-totals').checked,
+    showKpi:document.getElementById('exp-show-kpi').checked
+  };
+}
+
+function generateReportData(cfg){
+  const ents=getFilteredEntries();
+  const rows=ents.map(e=>{
+    const cl=db.clients.find(x=>x.id===e.clientId);
+    const pr=db.projects.find(x=>x.id===e.projectId);
+    const ac=pr?.activities?.find(x=>x.id===e.activityId);
+    const usr=db.users.find(x=>x.id===e.userId);
+    return{
+      date:e.date,
+      user:usr?.name||'?',
+      client:cl?.name||'?',
+      project:(pr?.code?pr.code+' - ':'')+( pr?.name||'?'),
+      activity:ac?.name||'?',
+      hours:e.hours,
+      cost:e.hours*e.costRate,
+      revenue:e.hours*e.clientRate,
+      note:e.note||''
+    };
+  });
+
+  // KPI totals
+  const kpis={
+    totalHours:rows.reduce((s,r)=>s+r.hours,0),
+    totalCost:rows.reduce((s,r)=>s+r.cost,0),
+    totalRevenue:rows.reduce((s,r)=>s+r.revenue,0),
+    count:rows.length
+  };
+  kpis.margin=kpis.totalRevenue-kpis.totalCost;
+
+  // Grouping
+  let groups=[];
+  if(cfg.groupBy==='none'){
+    groups=[{label:null,rows}];
+  }else{
+    const key=cfg.groupBy==='client'?'client':cfg.groupBy==='project'?'project':'user';
+    const map={};
+    rows.forEach(r=>{
+      const k=r[key];
+      if(!map[k])map[k]=[];
+      map[k].push(r);
+    });
+    groups=Object.entries(map).map(([label,rows])=>({label,rows}));
+    groups.sort((a,b)=>a.label.localeCompare(b.label));
+  }
+
+  groups=groups.map(g=>({
+    ...g,
+    totals:{
+      hours:g.rows.reduce((s,r)=>s+r.hours,0),
+      cost:g.rows.reduce((s,r)=>s+r.cost,0),
+      revenue:g.rows.reduce((s,r)=>s+r.revenue,0)
+    }
+  }));
+
+  return{title:cfg.title,period:_expPeriodLabel(),kpis,groups,generatedAt:new Date().toLocaleDateString('it-IT')};
+}
+
+function _buildTableHead(cfg){
+  const h=[];
+  if(cfg.cols.date)h.push('Data');
+  if(cfg.cols.user)h.push('Utente');
+  if(cfg.cols.client)h.push('Cliente');
+  if(cfg.cols.project)h.push('Commessa');
+  if(cfg.cols.activity)h.push('Attività');
+  if(cfg.cols.hours)h.push('Ore');
+  if(cfg.cols.cost)h.push('Costo €');
+  if(cfg.cols.revenue)h.push('Ricavo €');
+  if(cfg.cols.note)h.push('Note');
+  return h;
+}
+
+function _buildTableRow(r,cfg){
+  const row=[];
+  if(cfg.cols.date)row.push(r.date);
+  if(cfg.cols.user)row.push(r.user);
+  if(cfg.cols.client)row.push(r.client);
+  if(cfg.cols.project)row.push(r.project);
+  if(cfg.cols.activity)row.push(r.activity);
+  if(cfg.cols.hours)row.push(r.hours.toFixed(2));
+  if(cfg.cols.cost)row.push(r.cost.toFixed(2));
+  if(cfg.cols.revenue)row.push(r.revenue.toFixed(2));
+  if(cfg.cols.note)row.push(r.note);
+  return row;
+}
+
+function exportReportPDF(){
+  const cfg=_getExpConfig();
+  const data=generateReportData(cfg);
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=15;
+
+  // Header
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(18);
+  doc.setTextColor(58,123,232);
+  doc.text('TimeTrack',15,y);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.setTextColor(139,143,163);
+  doc.text('Generato il '+data.generatedAt,pageW-15,y,{align:'right'});
+  y+=8;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(14);
+  doc.setTextColor(232,233,237);
+  doc.text(data.title,15,y);
+  y+=5;
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(139,143,163);
+  doc.text('Periodo: '+data.period+' | '+data.kpis.count+' registrazioni',15,y);
+  y+=6;
+
+  // KPI box
+  if(cfg.showKpi){
+    doc.setDrawColor(42,46,59);
+    doc.setFillColor(24,27,36);
+    doc.roundedRect(15,y,pageW-30,18,3,3,'FD');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(232,233,237);
+    const kpis=[
+      'Ore totali: '+data.kpis.totalHours.toFixed(2)
+    ];
+    if(_a()){
+      kpis.push('Costo: €'+data.kpis.totalCost.toFixed(2));
+      kpis.push('Ricavo: €'+data.kpis.totalRevenue.toFixed(2));
+      kpis.push('Margine: €'+data.kpis.margin.toFixed(2));
+    }
+    const step=(pageW-30)/kpis.length;
+    kpis.forEach((k,i)=>{
+      doc.text(k,15+step*i+step/2,y+11,{align:'center'});
+    });
+    y+=24;
+  }
+
+  const head=[_buildTableHead(cfg)];
+  const colStyles={};
+  const hLen=head[0].length;
+
+  data.groups.forEach(g=>{
+    if(g.label){
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10);
+      doc.setTextColor(58,123,232);
+      if(y>doc.internal.pageSize.getHeight()-30){doc.addPage();y=15;}
+      doc.text(g.label,15,y);
+      y+=3;
+    }
+
+    const body=g.rows.map(r=>_buildTableRow(r,cfg));
+    if(cfg.showGroupTotals&&g.label){
+      const totRow=new Array(hLen).fill('');
+      const hi=head[0];
+      if(hi.includes('Ore'))totRow[hi.indexOf('Ore')]=g.totals.hours.toFixed(2);
+      if(hi.includes('Costo €'))totRow[hi.indexOf('Costo €')]=g.totals.cost.toFixed(2);
+      if(hi.includes('Ricavo €'))totRow[hi.indexOf('Ricavo €')]=g.totals.revenue.toFixed(2);
+      totRow[0]='TOTALE';
+      body.push(totRow);
+    }
+
+    doc.autoTable({
+      startY:y,
+      head,
+      body,
+      theme:'grid',
+      styles:{fontSize:8,cellPadding:2,textColor:[232,233,237],lineColor:[42,46,59],fillColor:[24,27,36]},
+      headStyles:{fillColor:[58,123,232],textColor:[255,255,255],fontStyle:'bold'},
+      alternateRowStyles:{fillColor:[30,34,48]},
+      didParseCell(data){
+        if(data.row.index===body.length-1&&g.label&&cfg.showGroupTotals){
+          data.cell.styles.fontStyle='bold';
+          data.cell.styles.fillColor=[42,46,59];
+        }
+      },
+      margin:{left:15,right:15}
+    });
+    y=doc.lastAutoTable.finalY+8;
+  });
+
+  // Footer pages
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(8);
+    doc.setTextColor(139,143,163);
+    doc.text('Pagina '+i+' di '+pageCount,pageW-15,doc.internal.pageSize.getHeight()-8,{align:'right'});
+  }
+
+  doc.save('report_'+todayStr()+'.pdf');
+  showToast('📄 PDF esportato!');
+  closeExportModal();
+}
+
+function exportReportExcel(){
+  const cfg=_getExpConfig();
+  const data=generateReportData(cfg);
+  const wb=XLSX.utils.book_new();
+
+  // Sheet 1: Report
+  const wsData=[];
+  wsData.push([data.title]);
+  wsData.push(['Periodo: '+data.period+'   |   Generato il: '+data.generatedAt]);
+  wsData.push([]);
+
+  const head=_buildTableHead(cfg);
+
+  data.groups.forEach(g=>{
+    if(g.label)wsData.push([g.label]);
+    wsData.push(head);
+    g.rows.forEach(r=>wsData.push(_buildTableRow(r,cfg)));
+    if(cfg.showGroupTotals&&g.label){
+      const totRow=new Array(head.length).fill('');
+      if(head.includes('Ore'))totRow[head.indexOf('Ore')]=g.totals.hours;
+      if(head.includes('Costo €'))totRow[head.indexOf('Costo €')]=g.totals.cost;
+      if(head.includes('Ricavo €'))totRow[head.indexOf('Ricavo €')]=g.totals.revenue;
+      totRow[0]='TOTALE';
+      wsData.push(totRow);
+    }
+    wsData.push([]);
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols']=head.map(()=>({wch:20}));
+  XLSX.utils.book_append_sheet(wb,ws,'Report');
+
+  // Sheet 2: KPI (admin only)
+  if(cfg.showKpi&&_a()){
+    const kpiData=[
+      ['KPI Riepilogo'],
+      ['Periodo',data.period],
+      ['Registrazioni',data.kpis.count],
+      ['Ore totali',data.kpis.totalHours],
+      ['Costo totale €',data.kpis.totalCost],
+      ['Ricavo totale €',data.kpis.totalRevenue],
+      ['Margine €',data.kpis.margin],
+      ['Margine %',data.kpis.totalRevenue>0?((data.kpis.margin/data.kpis.totalRevenue)*100).toFixed(1)+'%':'—']
+    ];
+    const wsKpi=XLSX.utils.aoa_to_sheet(kpiData);
+    wsKpi['!cols']=[{wch:22},{wch:18}];
+    XLSX.utils.book_append_sheet(wb,wsKpi,'KPI');
+  }
+
+  XLSX.writeFile(wb,'report_'+todayStr()+'.xlsx');
+  showToast('📗 Excel esportato!');
+  closeExportModal();
+}
+
+window.showExportModal=showExportModal;
+window.closeExportModal=closeExportModal;
+window.exportReportPDF=exportReportPDF;
+window.exportReportExcel=exportReportExcel;
 window.createManualBackup=createManualBackup;
 window.importBackupFile=importBackupFile;
 window.restoreBackup=restoreBackup;
@@ -1716,5 +2041,52 @@ window.delRate=delRate;
   renderLogin();
 })();
 </script>
+
+<!-- EXPORT REPORT MODAL -->
+<div id="export-modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeExportModal()">
+  <div class="modal export-modal">
+    <h3>📊 Esporta Report</h3>
+
+    <div class="modal-field">
+      <label>Titolo report</label>
+      <input type="text" id="exp-title" placeholder="Report Ore" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;outline:none;width:100%">
+    </div>
+
+    <div class="export-section-title">Colonne da includere</div>
+    <div class="export-col-grid" id="exp-columns">
+      <div class="export-check-item"><input type="checkbox" id="exp-col-date" checked><label for="exp-col-date">Data</label></div>
+      <div class="export-check-item" id="exp-col-user-wrap"><input type="checkbox" id="exp-col-user" checked><label for="exp-col-user">Utente</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-client" checked><label for="exp-col-client">Cliente</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-project" checked><label for="exp-col-project">Commessa</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-activity" checked><label for="exp-col-activity">Attività</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-hours" checked><label for="exp-col-hours">Ore</label></div>
+      <div class="export-check-item" id="exp-col-cost-wrap"><input type="checkbox" id="exp-col-cost" checked><label for="exp-col-cost">Costo (€)</label></div>
+      <div class="export-check-item" id="exp-col-revenue-wrap"><input type="checkbox" id="exp-col-revenue" checked><label for="exp-col-revenue">Ricavo (€)</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-note"><label for="exp-col-note">Note</label></div>
+    </div>
+
+    <div class="export-section-title">Opzioni</div>
+    <div class="modal-field">
+      <label>Raggruppa per</label>
+      <select id="exp-group" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;outline:none;width:100%">
+        <option value="none">Nessuno</option>
+        <option value="client">Cliente</option>
+        <option value="project">Commessa</option>
+        <option value="user">Utente</option>
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+      <div class="export-check-item" style="width:fit-content"><input type="checkbox" id="exp-show-totals" checked><label for="exp-show-totals">Mostra totali per gruppo</label></div>
+      <div class="export-check-item" style="width:fit-content"><input type="checkbox" id="exp-show-kpi" checked><label for="exp-show-kpi">Includi riepilogo KPI</label></div>
+    </div>
+
+    <div class="modal-actions" style="gap:10px;flex-wrap:wrap">
+      <button class="btn-ghost" onclick="closeExportModal()" style="padding:10px 16px;font-size:13px">Annulla</button>
+      <button class="export-btn-xls" onclick="exportReportExcel()">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportReportPDF()">📄 Esporta PDF</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
