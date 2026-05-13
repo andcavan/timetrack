@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\prog3\\\\Desktop\\\\APP MECCANICA\\\\timetrack-supabase\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")"
+    ]
+  }
+}
