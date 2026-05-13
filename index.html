@@ -816,7 +816,7 @@ function renderHeader(){
   pill.innerHTML=`<span class="user-dot" style="background:${currentUser.color}"></span>${currentUser.name.split(' ')[0]}`;
   const tabs=[{id:'timesheet',label:'Ore',icon:'📅'},{id:'dashboard',label:'Report',icon:'📊'},{id:'projects',label:'Commesse',icon:'📋'}];
   if(_a())tabs.push({id:'manage',label:'Gestione',icon:'⚙'});
-  document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('')+`<a href="pianificazione.html" class="nav-btn" style="text-decoration:none">📅 Pianificazione</a>`;
+  document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
 }
 function setView(v){
   currentView=v;document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
