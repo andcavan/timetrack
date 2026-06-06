@@ -23,7 +23,19 @@
     <div class="login-logo"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
     <h1 class="login-title">TimeTrack</h1>
     <p class="login-sub">Gestione Ore di Lavoro</p>
-    <div id="login-users" class="login-users"></div>
+    <form id="login-form" onsubmit="return false">
+      <div class="login-field">
+        <input type="text" id="login-username" placeholder="Username" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
+      </div>
+      <div class="login-remember">
+        <label><input type="checkbox" id="login-remember"> Ricordami</label>
+      </div>
+      <div class="login-field">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()">
+      </div>
+      <div id="login-error" style="color:var(--red);font-size:13px;display:none;margin-bottom:8px"></div>
+      <button class="btn-primary" style="width:100%" onclick="submitLogin()">Accedi</button>
+    </form>
   </div>
 </div>
 

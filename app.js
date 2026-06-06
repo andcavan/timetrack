@@ -280,21 +280,44 @@ async function hashPassword(pwd){
 
 let pendingLoginUserId=null;
 function renderLogin(){
-  document.getElementById('login-users').innerHTML=db.users.filter(u=>u.active!==false).map(u=>`<button class="login-btn" style="border-left-color:${u.color}" onclick="loginAs('${u.id}')"><span class="name">${u.username||u.name}</span><span class="role">${u.role==='admin'?'Admin':'Operatore'}</span>${!u.passwordHash?'<span class="role" style="color:var(--orange)">⚠ No password</span>':''}</button>`).join('');
+  const saved=localStorage.getItem('tt_saved_username');
+  if(saved){
+    const el=document.getElementById('login-username');
+    if(el)el.value=saved;
+    const cb=document.getElementById('login-remember');
+    if(cb)cb.checked=true;
+    setTimeout(()=>document.getElementById('login-password')?.focus(),50);
+  }else{
+    setTimeout(()=>document.getElementById('login-username')?.focus(),50);
+  }
 }
-async function loginAs(uid){
-  const user=db.users.find(u=>u.id===uid);
-  if(!user)return;
-  if(user.active===false){showToast('Account sospeso. Contatta un amministratore.','error');return}
-
-  // Se l'utente non ha ancora una password, chiedi di crearla
+async function submitLogin(){
+  const username=document.getElementById('login-username').value.trim();
+  const password=document.getElementById('login-password').value;
+  const errEl=document.getElementById('login-error');
+  errEl.style.display='none';
+  if(!db||!db.users){errEl.textContent='Dati non ancora caricati, riprova tra un momento';errEl.style.display='block';return;}
+  if(!username){errEl.textContent='Inserisci username';errEl.style.display='block';return;}
+  const user=db.users.find(u=>(u.username||u.name).toLowerCase()===username.toLowerCase());
+  if(!user){errEl.textContent='Utente non trovato';errEl.style.display='block';return;}
+  if(user.active===false){errEl.textContent='Account sospeso. Contatta un amministratore.';errEl.style.display='block';return;}
   if(!user.passwordHash){
-    showPasswordModal(uid,'create');
+    showPasswordModal(user.id,'create');
     return;
   }
-  
-  // Altrimenti chiedi la password
-  showPasswordModal(uid,'login');
+  if(!password){errEl.textContent='Inserisci la password';errEl.style.display='block';return;}
+  const hash=await hashPassword(password);
+  if(hash!==user.passwordHash){
+    errEl.textContent='Password errata';
+    errEl.style.display='block';
+    document.getElementById('login-password').value='';
+    document.getElementById('login-password').focus();
+    return;
+  }
+  const remember=document.getElementById('login-remember')?.checked;
+  if(remember)localStorage.setItem('tt_saved_username',username);
+  else localStorage.removeItem('tt_saved_username');
+  doLogin(user);
 }
 
 function showPasswordModal(uid,mode){
@@ -379,6 +402,9 @@ function logout(){
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-header').style.display='none';
   document.getElementById('app-main').style.display='none';
+  document.getElementById('login-username').value='';
+  document.getElementById('login-password').value='';
+  document.getElementById('login-error').style.display='none';
   renderLogin();
 }
 
@@ -1658,7 +1684,7 @@ window.executeReset=executeReset;
 window.onFilterChange=onFilterChange;
 window.applyFilters=applyFilters;
 window.resetFilters=resetFilters;
-window.loginAs=loginAs;
+window.submitLogin=submitLogin;
 window.logout=logout;
 window.changePassword=changePassword;
 window.submitChangePwd=submitChangePwd;
