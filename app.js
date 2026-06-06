@@ -59,6 +59,7 @@ function migrateDB(){
   // Rimuove campi tariffa obsoleti da users/clients se presenti da versioni precedenti
   db.users?.forEach(u=>{delete u.hourlyRate});
   db.clients?.forEach(c=>{delete c.clientRate});
+  db.users?.forEach(u=>{if(u.active===undefined)u.active=true});
 }
 async function loadDB(){
   // Sempre prima dal localStorage per partenza veloce
@@ -279,12 +280,13 @@ async function hashPassword(pwd){
 
 let pendingLoginUserId=null;
 function renderLogin(){
-  document.getElementById('login-users').innerHTML=db.users.map(u=>`<button class="login-btn" style="border-left-color:${u.color}" onclick="loginAs('${u.id}')"><span class="name">${u.username||u.name}</span><span class="role">${u.role==='admin'?'Admin':'Operatore'}</span>${!u.passwordHash?'<span class="role" style="color:var(--orange)">⚠ No password</span>':''}</button>`).join('');
+  document.getElementById('login-users').innerHTML=db.users.filter(u=>u.active!==false).map(u=>`<button class="login-btn" style="border-left-color:${u.color}" onclick="loginAs('${u.id}')"><span class="name">${u.username||u.name}</span><span class="role">${u.role==='admin'?'Admin':'Operatore'}</span>${!u.passwordHash?'<span class="role" style="color:var(--orange)">⚠ No password</span>':''}</button>`).join('');
 }
 async function loginAs(uid){
   const user=db.users.find(u=>u.id===uid);
   if(!user)return;
-  
+  if(user.active===false){showToast('Account sospeso. Contatta un amministratore.','error');return}
+
   // Se l'utente non ha ancora una password, chiedi di crearla
   if(!user.passwordHash){
     showPasswordModal(uid,'create');
@@ -326,6 +328,7 @@ function closePwdModal(){
 async function submitPwd(){
   const user=db.users.find(u=>u.id===pendingLoginUserId);
   if(!user)return;
+  if(user.active===false){const e=document.getElementById('pwd-error');e.textContent='Account sospeso.';e.style.display='block';return}
   const pwdInput=document.getElementById('pwd-input');
   const pwd=pwdInput.value;
   const errEl=document.getElementById('pwd-error');
@@ -573,6 +576,7 @@ document.addEventListener('click', function(event) {
     case 'delete-user': delUser(id); break;
     case 'reset-pwd': resetUserPassword(id); break;
     case 'edit-user': editUserModal(id); break;
+    case 'toggle-user-active': toggleUserActive(id); break;
     case 'edit-rate': editRateModal(id); break;
     case 'delete-rate': delRate(id); break;
   }
@@ -1191,7 +1195,7 @@ function renderMC(){
     const _fpList=db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
     el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${c.name}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${mgmtProjectFilter.search.replace(/"/g,'&quot;')}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_fpList.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${p.code||'—'} - ${p.name}</span><span class="mgmt-item-meta">${cl?.name||'?'}</span><span class="mgmt-item-meta">Ref: ${p.referente||'—'}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}">${p.status}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${u.name}" style="width:20px;height:20px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${u.name.charAt(0).toUpperCase()}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${a.name}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`}).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${u.name}</span><span class="mgmt-item-meta">@${u.username||'—'}</span>${u.email?`<span class="mgmt-item-meta">${u.email}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${u.name}</span><span class="mgmt-item-meta">@${u.username||'—'}</span>${u.email?`<span class="mgmt-item-meta">${u.email}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1297,10 +1301,11 @@ function saveActEdit(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)retu
 function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const p=db.projects.find(x=>x.id===pid);if(!p)return;p.activities=p.activities.filter(a=>a.id!==aid);saveDB();showToast('Eliminata');renderManage()}
 
 // CRUD Users
-function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
+function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),active:true});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
 function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${u.name}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${u.username||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${u.email||''}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
 function saveUserEdit(id){const u=db.users.find(x=>x.id===id);if(!u)return;u.name=document.getElementById('eu-name').value.trim();u.username=document.getElementById('eu-username').value.trim();u.email=document.getElementById('eu-email').value.trim();u.role=document.getElementById('eu-role').value;saveDB();closeModal();showToast('Aggiornato');renderManage();renderLogin()}
 function delUser(id){if(db.users.length<=1){showToast('Serve almeno un utente','error');return}if(id===currentUser.id){showToast('Non puoi eliminare te stesso','error');return}if(!confirm('Eliminare questo utente e tutte le sue registrazioni?'))return;db.entries=db.entries.filter(e=>e.userId!==id);db.users=db.users.filter(u=>u.id!==id);saveDB();showToast('Eliminato');renderManage();renderLogin()}
+function toggleUserActive(uid){if(!_a())return;const u=db.users.find(x=>x.id===uid);if(!u)return;if(u.role==='admin'){showToast('Non puoi sospendere un amministratore','error');return}if(uid===currentUser.id){showToast('Non puoi sospendere te stesso','error');return}u.active=u.active===false?true:false;saveDB();showToast(u.active?u.name+' riattivato':u.name+' sospeso');renderManage();renderLogin()}
 
 // ═══ IMPORT ═══
 document.addEventListener('dragover',e=>{e.preventDefault()});
@@ -1328,6 +1333,7 @@ window.addUser=addUser;
 window.editUserModal=editUserModal;
 window.saveUserEdit=saveUserEdit;
 window.delUser=delUser;
+window.toggleUserActive=toggleUserActive;
 window.closeModal=closeModal;
 window.onQeProjectChange3=onQeProjectChange3;
 window.goToday=goToday;
