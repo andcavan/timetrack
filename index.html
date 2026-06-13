@@ -152,6 +152,14 @@
   <div id="view-projects" class="view-panel">
     <div class="dash-wrap">
       <h2 class="section-title">📋 Report Commesse</h2>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <select id="prf-status" onchange="renderProjectReport()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="">— Tutti gli stati —</option>
+          <option value="active">Attivo</option>
+          <option value="completed">Completato</option>
+          <option value="suspended">Sospeso</option>
+        </select>
+      </div>
       <div class="proj-report-grid" id="proj-report-grid"></div>
     </div>
   </div>
