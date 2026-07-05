@@ -153,13 +153,23 @@
     <div class="dash-wrap">
       <h2 class="section-title">📋 Report Commesse</h2>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <input id="prf-search" placeholder="Cerca codice, nome, cliente…" oninput="renderProjectReport()" style="flex:2;min-width:180px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none">
+        <select id="prf-client" onchange="renderProjectReport()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option></select>
         <select id="prf-status" onchange="renderProjectReport()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
           <option value="">— Tutti gli stati —</option>
           <option value="active">Attivo</option>
           <option value="completed">Completato</option>
           <option value="suspended">Sospeso</option>
         </select>
+        <select id="prf-sort" onchange="renderProjectReport()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="deadline">Ordina: Scadenza</option>
+          <option value="hoursPct">Ordina: % ore consumate</option>
+          <option value="hours">Ordina: Ore registrate</option>
+          <option value="budget">Ordina: Budget €</option>
+          <option value="name">Ordina: Nome</option>
+        </select>
       </div>
+      <div class="proj-kpi-row" id="proj-kpi-row"></div>
       <div class="proj-report-grid" id="proj-report-grid"></div>
     </div>
   </div>

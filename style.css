@@ -132,6 +132,14 @@ input,select,button,textarea{font-family:var(--font)}
 .proj-activities{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)}
 .proj-act-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .proj-act-tag{background:var(--card);border:1px solid var(--border);padding:2px 8px;border-radius:6px;font-size:11px}
+.proj-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.proj-kpi{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.proj-kpi-val{font-size:22px;font-weight:700;font-family:var(--mono)}
+.proj-kpi-label{font-size:12px;color:var(--text-dim);margin-top:2px}
+.proj-kpi-sub{font-size:11px;color:var(--text-dim);margin-top:1px}
+.proj-risk-badge{font-size:10px;padding:3px 9px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.proj-risk-badge.danger{background:rgba(232,93,58,.15);color:var(--red)}
+.proj-risk-badge.warn{background:rgba(232,163,58,.15);color:var(--orange)}
 
 /* Table */
 .table-wrap{overflow-x:auto;margin-top:10px}

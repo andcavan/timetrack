@@ -670,6 +670,7 @@ let reportFilters={
   projectId:null,
   userId:null
 };
+let projReportFilters={search:'',clientId:'',status:'',sort:'deadline'};
 
 function onFilterChange(){
   const period=document.getElementById('filter-period').value;
@@ -1181,39 +1182,124 @@ async function executeReset(){
 function exportJSON(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`timetrack_${todayStr()}.json`;a.click();URL.revokeObjectURL(u);showToast('Esportato!')}
 
 // ═══ PROJECT REPORT ═══
+function projectStats(p){
+  const pe=db.entries.filter(e=>e.projectId===p.id&&(_a()||e.userId===currentUser.id));
+  const uH=pe.reduce((s,e)=>s+e.hours,0),uB=_a()?pe.reduce((s,e)=>s+e.hours*e.costRate,0):0;
+  const hPraw=p.budgetHours?uH/p.budgetHours*100:0;
+  const bPraw=_a()&&p.budget?uB/p.budget*100:0;
+  const dlDiff=p.deadline?Math.ceil((new Date(p.deadline)-new Date())/(864e5)):null;
+  return{pe,uH,uB,hP:Math.min(hPraw,100),bP:Math.min(bPraw,100),hPraw,bPraw,dlDiff};
+}
+function projectRisk(p,st){
+  if(p.status==='completed')return{level:null,label:''};
+  const overdue=st.dlDiff!==null&&st.dlDiff<0;
+  const overHours=p.budgetHours&&st.hPraw>=100;
+  const overBudget=_a()&&p.budget&&st.bPraw>=100;
+  if(overdue||overHours||overBudget)return{level:'danger',label:overdue?'Scaduta':overBudget?'Fuori budget':'Ore esaurite'};
+  const nearDl=st.dlDiff!==null&&st.dlDiff>=0&&st.dlDiff<14;
+  const nearHours=p.budgetHours&&st.hPraw>85;
+  const nearBudget=_a()&&p.budget&&st.bPraw>85;
+  if(nearDl||nearHours||nearBudget)return{level:'warn',label:nearDl?`Scade tra ${st.dlDiff}gg`:nearBudget?'Budget quasi esaurito':'Ore quasi esaurite'};
+  return{level:null,label:''};
+}
 function renderProjectReport(){
   const g=document.getElementById('proj-report-grid');
-  const statusFilter=document.getElementById('prf-status')?.value||'';
+  projReportFilters.search=(document.getElementById('prf-search')?.value||'').toLowerCase();
+  projReportFilters.clientId=document.getElementById('prf-client')?.value||'';
+  projReportFilters.status=document.getElementById('prf-status')?.value||'';
+  projReportFilters.sort=document.getElementById('prf-sort')?.value||'deadline';
+  const f=projReportFilters;
+  const csel=document.getElementById('prf-client');
+  if(csel)csel.innerHTML='<option value="">— Tutti i clienti —</option>'+db.clients.map(c=>`<option value="${c.id}" ${f.clientId===c.id?'selected':''}>${c.name}</option>`).join('');
   const projs=db.projects.filter(p=>{
-    if(statusFilter&&p.status!==statusFilter)return false;
-    return p.status==='active'||db.entries.some(e=>e.projectId===p.id);
+    if(f.status&&p.status!==f.status)return false;
+    if(!(p.status==='active'||db.entries.some(e=>e.projectId===p.id)))return false;
+    if(f.clientId&&p.clientId!==f.clientId)return false;
+    if(f.search){const cl=db.clients.find(c=>c.id===p.clientId);if(!(((p.code||'')+' '+p.name+' '+(cl?.name||'')).toLowerCase().includes(f.search)))return false}
+    return true;
   });
-  if(!projs.length){g.innerHTML='<p class="empty-text">Nessuna commessa</p>';return}
-  g.innerHTML=projs.map(p=>{
+  const rows=projs.map(p=>{const st=projectStats(p);return{p,st,risk:projectRisk(p,st)}});
+  rows.sort((a,b)=>{
+    switch(f.sort){
+      case 'hoursPct':return b.st.hPraw-a.st.hPraw;
+      case 'hours':return b.st.uH-a.st.uH;
+      case 'budget':return (b.p.budget||0)-(a.p.budget||0);
+      case 'name':return (a.p.name||'').localeCompare(b.p.name||'');
+      default:return (a.p.deadline?new Date(a.p.deadline).getTime():Infinity)-(b.p.deadline?new Date(b.p.deadline).getTime():Infinity);
+    }
+  });
+  const kpiEl=document.getElementById('proj-kpi-row');
+  if(kpiEl){
+    const totH=rows.reduce((s,r)=>s+r.st.uH,0);
+    const nActive=rows.filter(r=>r.p.status==='active').length;
+    const nRisk=rows.filter(r=>r.risk.level==='danger').length;
+    const totCost=_a()?rows.reduce((s,r)=>s+r.st.uB,0):0;
+    const totBudget=_a()?rows.reduce((s,r)=>s+(r.p.budget||0),0):0;
+    kpiEl.innerHTML=[
+      {l:'Commesse',v:rows.length,s:`${nActive} attive`},
+      {l:'Ore registrate',v:totH.toFixed(1)+'h',s:''},
+      ...(_a()?[{l:'Budget consumato',v:'€'+totCost.toFixed(0),s:totBudget?'su €'+totBudget.toFixed(0):''}]:[]),
+      {l:'A rischio',v:nRisk,s:nRisk?'da verificare':'tutto ok',c:nRisk?'var(--red)':'var(--green)'}
+    ].map(k=>`<div class="proj-kpi"><div class="proj-kpi-val"${k.c?` style="color:${k.c}"`:''}>${k.v}</div><div class="proj-kpi-label">${k.l}</div>${k.s?`<div class="proj-kpi-sub">${k.s}</div>`:''}</div>`).join('');
+  }
+  if(!rows.length){g.innerHTML='<p class="empty-text">Nessuna commessa</p>';return}
+  g.innerHTML=rows.map(({p,st,risk})=>{
     const cl=db.clients.find(c=>c.id===p.clientId);
-    const pe=db.entries.filter(e=>e.projectId===p.id&&(_a()||e.userId===currentUser.id));
-    const uH=pe.reduce((s,e)=>s+e.hours,0),uB=_a()?pe.reduce((s,e)=>s+e.hours*e.costRate,0):0;
-    const hP=p.budgetHours?Math.min(uH/p.budgetHours*100,100):0;
-    const bP=_a()&&p.budget?Math.min(uB/p.budget*100,100):0;
     let dlI='',dlP=0,dlC='var(--green)';
-    if(p.deadline){const now=new Date(),dl=new Date(p.deadline),diff=Math.ceil((dl-now)/(864e5));
+    if(p.deadline){const diff=st.dlDiff;
       if(diff<0){dlI=`Scaduta da ${Math.abs(diff)}gg`;dlC='var(--red)';dlP=100}
       else if(diff<30){dlI=`${diff}gg rimasti`;dlC='var(--orange)';dlP=80}
       else{dlI=`${diff}gg rimasti`;dlP=Math.min(30,100)}}
-    const hC=hP>90?'var(--red)':hP>70?'var(--orange)':'var(--accent)';
-    const bC=bP>90?'var(--red)':bP>70?'var(--orange)':'var(--green)';
+    const hC=st.hP>90?'var(--red)':st.hP>70?'var(--orange)':'var(--accent)';
+    const bC=st.bP>90?'var(--red)':st.bP>70?'var(--orange)':'var(--green)';
     const sC=p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)';
     const sL=p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso';
-    return`<div class="proj-card">
-      <div class="proj-card-head"><div><div class="proj-card-title">${p.code||'—'} - ${p.name}</div><div class="proj-card-client">${cl?.name||'?'}</div></div><span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div>
+    const riskBadge=risk.level?`<span class="proj-risk-badge ${risk.level}">${risk.label}</span>`:'';
+    return`<div class="proj-card" style="cursor:pointer" onclick="openProjectDetail('${p.id}')">
+      <div class="proj-card-head"><div><div class="proj-card-title">${p.code||'—'} - ${p.name}</div><div class="proj-card-client">${cl?.name||'?'}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${riskBadge}<span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div></div>
       <div class="proj-meters">
-        <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${hP}%;background:${hC}"></div></div></div>
-        ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${bP}%;background:${bC}"></div></div></div>`:''}
+        <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.hP}%;background:${hC}"></div></div></div>
+        ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${st.uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.bP}%;background:${bC}"></div></div></div>`:''}
         ${p.deadline?`<div><div class="proj-meter-label"><span>Scadenza: ${fmtDate(p.deadline)}</span><span style="color:${dlC};font-weight:600">${dlI}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${dlP}%;background:${dlC}"></div></div></div>`:''}
       </div>
-      <div class="proj-activities"><strong>Attività:</strong><div class="proj-act-list">${(p.activities||[]).map(a=>{const aH=pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${a.name} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')}${!p.activities?.length?'<span style="font-style:italic">Nessuna</span>':''}</div></div>
+      <div class="proj-activities"><strong>Attività:</strong><div class="proj-act-list">${(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${a.name} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')}${!p.activities?.length?'<span style="font-style:italic">Nessuna</span>':''}</div></div>
     </div>`}).join('');
 }
+function openProjectDetail(id){
+  const p=db.projects.find(x=>x.id===id);if(!p)return;
+  const cl=db.clients.find(c=>c.id===p.clientId);
+  const st=projectStats(p);
+  const hC=st.hP>90?'var(--red)':st.hP>70?'var(--orange)':'var(--accent)';
+  const bC=st.bP>90?'var(--red)':st.bP>70?'var(--orange)':'var(--green)';
+  const sC=p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)';
+  const sL=p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso';
+  let dlI='',dlC='var(--green)';
+  if(p.deadline){const diff=st.dlDiff;if(diff<0){dlI=`Scaduta da ${Math.abs(diff)}gg`;dlC='var(--red)'}else if(diff<30){dlI=`${diff}gg rimasti`;dlC='var(--orange)'}else{dlI=`${diff}gg rimasti`}}
+  const actHtml=(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${a.name} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna attività</span>';
+  const byUser={};st.pe.forEach(e=>{byUser[e.userId]=(byUser[e.userId]||0)+e.hours});
+  const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${u?.color||'#888'};margin-right:4px"></span>${u?.name||'?'} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
+  const recent=[...st.pe].sort((a,b)=>(b.date+(b.createdAt||'')).localeCompare(a.date+(a.createdAt||''))).slice(0,8);
+  const recentHtml=recent.map(e=>{const u=db.users.find(x=>x.id===e.userId);const a=p.activities?.find(x=>x.id===e.activityId);return`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);color:var(--text-dim);min-width:70px">${fmtDate(e.date)}</span>${_a()?`<span style="min-width:70px">${u?.name?.split(' ')[0]||'?'}</span>`:''}<span style="flex:1;color:var(--text-dim)">${a?.name||'—'}${e.note?' · '+e.note:''}</span><span style="font-weight:600">${e.hours}h</span></div>`}).join('')||'<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Nessuna registrazione</div>';
+  const stBtn=(s,l,col,bg)=>`<button class="mini-btn" onclick="setProjectStatus('${p.id}','${s}');renderProjectReport();openProjectDetail('${p.id}')"${p.status===s?` style="background:${bg};color:${col};border-color:${col}"`:''}>${l}</button>`;
+  openModal(`<h3>${p.code||'—'} - ${p.name}</h3>
+    <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 14px;flex-wrap:wrap"><span class="proj-card-client">${cl?.name||'?'}</span><span style="color:var(--text-dim);font-size:12px">Ref: ${p.referente||'—'}</span><span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div>
+    <div class="proj-meters">
+      <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.hP}%;background:${hC}"></div></div></div>
+      ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${st.uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.bP}%;background:${bC}"></div></div></div>`:''}
+      ${p.deadline?`<div><div class="proj-meter-label"><span>Scadenza: ${fmtDate(p.deadline)}</span><span style="color:${dlC};font-weight:600">${dlI}</span></div></div>`:''}
+    </div>
+    <div class="proj-activities"><strong>Ore per attività:</strong><div class="proj-act-list">${actHtml}</div></div>
+    ${_a()?`<div class="proj-activities"><strong>Ore per utente:</strong><div class="proj-act-list">${userHtml}</div></div>`:''}
+    <div class="proj-activities"><strong>Ultime registrazioni:</strong><div style="margin-top:6px">${recentHtml}</div></div>
+    <div class="modal-actions" style="flex-wrap:wrap;gap:6px">
+      ${stBtn('active','● Attivo','var(--green)','rgba(46,174,109,.18)')}
+      ${stBtn('completed','✓ Completato','var(--accent)','rgba(58,123,232,.18)')}
+      ${stBtn('suspended','⏸ Sospeso','var(--orange)','rgba(232,163,58,.18)')}
+      <button class="btn-outline" onclick="editProjectModal('${p.id}')">✏ Modifica</button>
+      <button class="add-btn-sm" onclick="closeModal()">Chiudi</button>
+    </div>`);
+}
+window.openProjectDetail=openProjectDetail;
 
 // ═══ MANAGE ═══
 function renderManage(){
