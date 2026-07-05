@@ -556,7 +556,12 @@ function addEntry(){
   if(!proj){showToast('Commessa non valida','error');return}
   const r=resolveRate(currentUser.id,proj.clientId,projectId,date);
   db.entries.push({id:gid(),userId:currentUser.id,clientId:proj.clientId,projectId,activityId,date,hours,note:note||'',costRate:r.costRate,clientRate:r.clientRate,createdAt:new Date().toISOString()});
-  saveDB();document.getElementById('qe-hours').value='';document.getElementById('qe-note').value='';
+  saveDB();
+  document.getElementById('qe-project-search').value='';
+  document.getElementById('qe-project').value='';
+  onQeProjectChange3();
+  document.getElementById('qe-hours').value='';
+  document.getElementById('qe-note').value='';
   showToast(`${hours}h registrate!`);renderQH();renderWeek();
 }
 
