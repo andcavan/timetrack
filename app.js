@@ -1628,7 +1628,7 @@ function exportReportPDF(){
   y+=8;
   doc.setFont('helvetica','bold');
   doc.setFontSize(14);
-  doc.setTextColor(232,233,237);
+  doc.setTextColor(33,37,41);
   doc.text(data.title,15,y);
   y+=5;
   doc.setFont('helvetica','normal');
@@ -1639,12 +1639,12 @@ function exportReportPDF(){
 
   // KPI box
   if(cfg.showKpi){
-    doc.setDrawColor(42,46,59);
-    doc.setFillColor(24,27,36);
+    doc.setDrawColor(210,213,222);
+    doc.setFillColor(245,246,250);
     doc.roundedRect(15,y,pageW-30,18,3,3,'FD');
     doc.setFont('helvetica','bold');
     doc.setFontSize(10);
-    doc.setTextColor(232,233,237);
+    doc.setTextColor(33,37,41);
     const kpis=[
       'Ore totali: '+data.kpis.totalHours.toFixed(2)
     ];
@@ -1690,13 +1690,13 @@ function exportReportPDF(){
       head,
       body,
       theme:'grid',
-      styles:{fontSize:8,cellPadding:2,textColor:[232,233,237],lineColor:[42,46,59],fillColor:[24,27,36]},
+      styles:{fontSize:8,cellPadding:2,textColor:[33,37,41],lineColor:[210,213,222],fillColor:[255,255,255]},
       headStyles:{fillColor:[58,123,232],textColor:[255,255,255],fontStyle:'bold'},
-      alternateRowStyles:{fillColor:[30,34,48]},
+      alternateRowStyles:{fillColor:[245,246,250]},
       didParseCell(data){
         if(data.row.index===body.length-1&&g.label&&cfg.showGroupTotals){
           data.cell.styles.fontStyle='bold';
-          data.cell.styles.fillColor=[42,46,59];
+          data.cell.styles.fillColor=[226,230,240];
         }
       },
       margin:{left:15,right:15}
