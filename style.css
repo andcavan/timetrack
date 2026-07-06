@@ -39,6 +39,9 @@ input,select,button,textarea{font-family:var(--font)}
 .nav-btn:hover{color:var(--text)}
 .nav-btn.active{background:rgba(58,123,232,.09);color:var(--accent)}
 .header-right{display:flex;align-items:center;gap:10px}
+.header-clock{display:flex;align-items:baseline;gap:10px;font-size:14px;color:var(--text-dim);white-space:nowrap}
+.header-clock .hc-time{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--text)}
+@media(max-width:640px){.header-clock .hc-date{display:none}}
 .user-pill{display:flex;align-items:center;gap:6px;padding:4px 12px 4px 6px;border-radius:20px;border:1.5px solid;font-size:13px;font-weight:500}
 .user-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .logout-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}

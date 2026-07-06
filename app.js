@@ -204,11 +204,9 @@ window.addEventListener('online',()=>{
 // Re-render della view corrente
 function rerenderCurrent(){
   if(document.querySelector('.modal-backdrop'))return; // non disturbare modal aperti
+  if(document.querySelector('#modal-root .modal-overlay'))return; // modali di modifica aperti
   if(!currentUser)return;
-  if(activeView==='timesheet')renderTimesheet();
-  else if(activeView==='report')renderReport();
-  else if(activeView==='projects')renderProjectReport();
-  else if(activeView==='manage')renderManage();
+  ({timesheet:renderWeek,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[currentView]?.();
 }
 
 // Applica nuovi dati ricevuti dal cloud
@@ -258,12 +256,15 @@ function startPolling(){
     }catch(e){console.error('Polling err:',e)}
   },3000);
 }
-function todayStr(){return new Date().toISOString().split('T')[0]}
+function localYMD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function parseYMD(s){const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd)}
+function todayStr(){return localYMD(new Date())}
 function fmtDate(d){if(!d)return'—';const[y,m,dd]=d.split('-');return`${dd}/${m}/${y}`}
-function getWeekStart(d){const dt=new Date(d);const day=dt.getDay();const diff=dt.getDate()-day+(day===0?-6:1);return new Date(dt.setDate(diff)).toISOString().split('T')[0]}
-function getWeekDays(s){const d=[];for(let i=0;i<7;i++){const x=new Date(s);x.setDate(x.getDate()+i);d.push(x.toISOString().split('T')[0])}return d}
+function getWeekStart(d){const dt=parseYMD(d);const day=dt.getDay();const diff=dt.getDate()-day+(day===0?-6:1);dt.setDate(diff);return localYMD(dt)}
+function getWeekDays(s){const d=[];const x=parseYMD(s);for(let i=0;i<7;i++){d.push(localYMD(x));x.setDate(x.getDate()+1)}return d}
 const DN=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
 function showToast(m,t='success'){const el=document.getElementById('toast');el.textContent=m;el.style.background=t==='error'?'var(--red)':'var(--green)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2500)}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function _a(){return currentUser&&currentUser.role==='admin'}
 function isProjectVisible(proj){if(_a())return true;const au=proj.assignedUsers;if(!au||au.length===0)return true;return au.includes(currentUser.id)}
 function gid(){return'id'+(db.nextId++)}
@@ -324,7 +325,7 @@ function showPasswordModal(uid,mode){
   pendingLoginUserId=uid;
   const user=db.users.find(u=>u.id===uid);
   const isCreate=mode==='create';
-  const title=isCreate?`Imposta password per ${user.username||user.name}`:`Accesso: ${user.username||user.name}`;
+  const title=isCreate?`Imposta password per ${esc(user.username||user.name)}`:`Accesso: ${esc(user.username||user.name)}`;
   const subtitle=isCreate?'Prima volta? Crea la tua password personale (verrà richiesta nei prossimi accessi)':'Inserisci la tua password';
   const html=`<div class="modal-backdrop" onclick="if(event.target===this)closePwdModal()"><div class="modal" style="max-width:400px">
     <h3 style="margin:0 0 8px;color:var(--accent)">${title}</h3>
@@ -470,7 +471,7 @@ async function resetUserPassword(uid){
 function renderHeader(){
   const pill=document.getElementById('user-pill');
   pill.style.borderColor=currentUser.color;
-  pill.innerHTML=`<span class="user-dot" style="background:${currentUser.color}"></span>${currentUser.name.split(' ')[0]}`;
+  pill.innerHTML=`<span class="user-dot" style="background:${currentUser.color}"></span>${esc(currentUser.name.split(' ')[0])}`;
   const tabs=[{id:'timesheet',label:'Ore',icon:'📅'},{id:'dashboard',label:'Report',icon:'📊'},{id:'projects',label:'Commesse',icon:'📋'}];
   if(_a())tabs.push({id:'manage',label:'Gestione',icon:'⚙'});
   document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
@@ -500,7 +501,7 @@ function onQeProjectChange3(){
   const cl=db.clients.find(c=>c.id===proj.clientId);
   clientDisp.value=cl?.name||'?';
   if(!proj.activities?.length){as.innerHTML='<option value="">Nessuna attività</option>';as.disabled=true;return}
-  as.disabled=false;as.innerHTML='<option value="">— Seleziona —</option>'+proj.activities.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  as.disabled=false;as.innerHTML='<option value="">— Seleziona —</option>'+proj.activities.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
 function renderQH(){
   const cur=parseFloat(document.getElementById('qe-hours').value);
@@ -512,7 +513,7 @@ function filterProjects(){
   const projs=db.projects.filter(p=>p.status==='active'&&isProjectVisible(p));
   const matches=q?projs.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return(p.code+' '+p.name+' '+(cl?.name||'')).toLowerCase().includes(q);}):projs;
   if(!matches.length){dd.innerHTML='<div class="project-dropdown-item" style="color:var(--text-dim)">Nessun risultato</div>';dd.style.display='block';return}
-  dd.innerHTML=matches.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="project-dropdown-item" onmousedown="selectProject('${p.id}','${(p.code+' - '+p.name).replace(/'/g,"\\'")}')"><span class="proj-code">${p.code}</span>${p.name}<div class="proj-client">${cl?.name||''}</div></div>`;}).join('');
+  dd.innerHTML=matches.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const label=(p.code+' - '+p.name).replace(/\\/g,'\\\\').replace(/'/g,"\\'");return`<div class="project-dropdown-item" onmousedown="selectProject('${p.id}','${esc(label)}')"><span class="proj-code">${esc(p.code)}</span>${esc(p.name)}<div class="proj-client">${esc(cl?.name||'')}</div></div>`;}).join('');
   dd.style.display='block';
 }
 function hideProjectDropdown(){setTimeout(()=>{const dd=document.getElementById('qe-project-dropdown');if(dd)dd.style.display='none';},150)}
@@ -566,7 +567,7 @@ function addEntry(){
 }
 
 // ═══ WEEK ═══
-function changeWeek(dir){const d=new Date(selectedWeek);d.setDate(d.getDate()+dir*7);selectedWeek=d.toISOString().split('T')[0];renderWeek()}
+function changeWeek(dir){const d=parseYMD(selectedWeek);d.setDate(d.getDate()+dir*7);selectedWeek=localYMD(d);renderWeek()}
 function goToday(){selectedWeek=getWeekStart(todayStr());renderWeek()}
 function selectDay(date){selectedDay=date;document.getElementById('qe-date').value=date;renderWeek()}
 function renderWeek(){
@@ -582,7 +583,7 @@ function renderWeek(){
 }
 function renderCard(e){
   const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId),can=_a()||e.userId===currentUser.id,showU=_a()&&e.userId!==currentUser.id;
-  return`<div class="entry-card" style="border-left-color:${usr?.color||'#888'}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${cl?.name||'?'}</div><div class="entry-project">${pr?.name||'?'}</div><div class="entry-activity">${ac?.name||'?'}</div>${showU?`<div class="entry-user">${usr?.name?.split(' ')[0]}</div>`:''}${e.note?`<div class="entry-note">${e.note}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">✏</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">🗑</button></div>`:''}</div>`;
+  return`<div class="entry-card" style="border-left-color:${usr?.color||'#888'}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">✏</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">🗑</button></div>`:''}</div>`;
 }
 
 // Add global event delegation for all buttons with data-action
@@ -623,21 +624,21 @@ function editEntryModal(id){
   const projects=db.projects.filter(p=>p.clientId===e.clientId&&p.status==='active');
   openModal(`<h3>✏ Modifica Registrazione</h3>
     <div class="modal-field"><label>Cliente</label><select id="me-client" onchange="onEditClientChange()">
-      ${clients.map(c=>`<option value="${c.id}" ${c.id===e.clientId?'selected':''}>${c.name}</option>`).join('')}</select></div>
+      ${clients.map(c=>`<option value="${c.id}" ${c.id===e.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Commessa</label><select id="me-project" onchange="onEditProjectChange()">
-      ${projects.map(p=>`<option value="${p.id}" ${p.id===e.projectId?'selected':''}>${p.name}</option>`).join('')}</select></div>
+      ${projects.map(p=>`<option value="${p.id}" ${p.id===e.projectId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Attività</label><select id="me-activity">
-      ${acts.map(a=>`<option value="${a.id}" ${a.id===e.activityId?'selected':''}>${a.name}</option>`).join('')}</select></div>
+      ${acts.map(a=>`<option value="${a.id}" ${a.id===e.activityId?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Data</label><input type="date" id="me-date" value="${e.date}"></div>
     <div class="modal-field"><label>Ore</label><input type="number" id="me-hours" value="${e.hours}" min="0.25" max="24" step="0.25"></div>
-    <div class="modal-field"><label>Nota</label><input type="text" id="me-note" value="${e.note||''}"></div>
+    <div class="modal-field"><label>Nota</label><input type="text" id="me-note" value="${esc(e.note||'')}"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveEntryEdit('${id}')">Salva</button></div>`);
 }
 function onEditClientChange(){
   const cid=document.getElementById('me-client').value;
   const ps=document.getElementById('me-project');
   const projs=db.projects.filter(p=>p.clientId===cid&&p.status==='active');
-  ps.innerHTML=projs.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  ps.innerHTML=projs.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
   onEditProjectChange();
 }
 function onEditProjectChange(){
@@ -645,7 +646,7 @@ function onEditProjectChange(){
   const as=document.getElementById('me-activity');
   const proj=db.projects.find(p=>p.id===pid);
   const acts=proj?.activities||[];
-  as.innerHTML=acts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  as.innerHTML=acts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
 function saveEntryEdit(id){
   const e=db.entries.find(x=>x.id===id);if(!e)return;
@@ -656,6 +657,8 @@ function saveEntryEdit(id){
   e.activityId=document.getElementById('me-activity').value;
   e.date=document.getElementById('me-date').value;
   e.hours=h;e.note=document.getElementById('me-note').value;
+  const r=resolveRate(e.userId,e.clientId,e.projectId,e.date);
+  e.costRate=r.costRate;e.clientRate=r.clientRate;
   saveDB();closeModal();showToast('Aggiornata');renderWeek();
 }
 function delEntry(id){if(!confirm('Eliminare questa registrazione?'))return;db.entries=db.entries.filter(e=>e.id!==id);saveDB();showToast('Rimossa');renderWeek()}
@@ -711,20 +714,20 @@ function getFilteredEntries(){
   let fromDate,toDate;
   if(reportFilters.period==='current-month'){
     const now=new Date();
-    fromDate=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
-    toDate=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+    fromDate=localYMD(new Date(now.getFullYear(),now.getMonth(),1));
+    toDate=localYMD(new Date(now.getFullYear(),now.getMonth()+1,0));
   }else if(reportFilters.period==='last-month'){
     const now=new Date();
-    fromDate=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString().slice(0,10);
-    toDate=new Date(now.getFullYear(),now.getMonth(),0).toISOString().slice(0,10);
+    fromDate=localYMD(new Date(now.getFullYear(),now.getMonth()-1,1));
+    toDate=localYMD(new Date(now.getFullYear(),now.getMonth(),0));
   }else if(reportFilters.period==='current-year'){
     const now=new Date();
-    fromDate=new Date(now.getFullYear(),0,1).toISOString().slice(0,10);
-    toDate=new Date(now.getFullYear(),11,31).toISOString().slice(0,10);
+    fromDate=localYMD(new Date(now.getFullYear(),0,1));
+    toDate=localYMD(new Date(now.getFullYear(),11,31));
   }else if(reportFilters.period==='last-year'){
     const now=new Date();
-    fromDate=new Date(now.getFullYear()-1,0,1).toISOString().slice(0,10);
-    toDate=new Date(now.getFullYear()-1,11,31).toISOString().slice(0,10);
+    fromDate=localYMD(new Date(now.getFullYear()-1,0,1));
+    toDate=localYMD(new Date(now.getFullYear()-1,11,31));
   }else if(reportFilters.period==='custom'){
     fromDate=reportFilters.dateFrom;
     toDate=reportFilters.dateTo;
@@ -756,20 +759,20 @@ function renderDashboard(){
   // Popola i filtri
   const filterClient=document.getElementById('filter-client');
   if(filterClient){
-    filterClient.innerHTML='<option value="">Tutti i clienti</option>'+db.clients.map(c=>`<option value="${c.id}" ${reportFilters.clientId===c.id?'selected':''}>${c.name}</option>`).join('');
+    filterClient.innerHTML='<option value="">Tutti i clienti</option>'+db.clients.map(c=>`<option value="${c.id}" ${reportFilters.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   }
   
   const filterProject=document.getElementById('filter-project');
   if(filterProject){
     filterProject.innerHTML='<option value="">Tutte le commesse</option>'+db.projects.filter(p=>isProjectVisible(p)).map(p=>{
       const cl=db.clients.find(c=>c.id===p.clientId);
-      return`<option value="${p.id}" ${reportFilters.projectId===p.id?'selected':''}>${p.code} - ${p.name} (${cl?.name||'?'})</option>`;
+      return`<option value="${p.id}" ${reportFilters.projectId===p.id?'selected':''}>${esc(p.code)} - ${esc(p.name)} (${esc(cl?.name||'?')})</option>`;
     }).join('');
   }
   
   const filterUser=document.getElementById('filter-user');
   if(filterUser&&_a()){
-    filterUser.innerHTML='<option value="">Tutti gli utenti</option>'+db.users.map(u=>`<option value="${u.id}" ${reportFilters.userId===u.id?'selected':''}>${u.name}</option>`).join('');
+    filterUser.innerHTML='<option value="">Tutti gli utenti</option>'+db.users.map(u=>`<option value="${u.id}" ${reportFilters.userId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
     filterUser.parentElement.style.display='block';
   }else if(filterUser){
     filterUser.parentElement.style.display='none';
@@ -787,13 +790,13 @@ function renderDashboard(){
   const byC={};ents.forEach(e=>{const c=db.clients.find(x=>x.id===e.clientId);const n=c?.name||'?';if(!byC[n])byC[n]={h:0,c:0,r:0};byC[n].h+=e.hours;byC[n].c+=e.hours*e.costRate;byC[n].r+=e.hours*e.clientRate});
   const ce=Object.entries(byC),bd=document.getElementById('client-breakdown');
   if(!ce.length)bd.innerHTML='<p class="empty-text">Nessuna registrazione con i filtri selezionati</p>';
-  else{const mx=Math.max(...ce.map(([,d])=>d.h),1);bd.innerHTML=ce.map(([n,d])=>`<div class="breakdown-row"><div class="breakdown-name">${n}</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:${d.h/mx*100}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div></div><div class="breakdown-stats"><span>${d.h.toFixed(1)}h</span>${_a()?`<span style="color:var(--text-dim)">€${d.r.toFixed(0)}</span><span style="color:${d.r-d.c>=0?'var(--green)':'var(--red)'};font-weight:600">+€${(d.r-d.c).toFixed(0)}</span>`:''}</div></div>`).join('')}
+  else{const mx=Math.max(...ce.map(([,d])=>d.h),1);bd.innerHTML=ce.map(([n,d])=>`<div class="breakdown-row"><div class="breakdown-name">${esc(n)}</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:${d.h/mx*100}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div></div><div class="breakdown-stats"><span>${d.h.toFixed(1)}h</span>${_a()?`<span style="color:var(--text-dim)">€${d.r.toFixed(0)}</span><span style="color:${d.r-d.c>=0?'var(--green)':'var(--red)'};font-weight:600">+€${(d.r-d.c).toFixed(0)}</span>`:''}</div></div>`).join('')}
 
   // PROJECT BREAKDOWN WITH DONUTS
   renderProjectBreakdown(ents);
 
   const all=ents.slice(-100).reverse();
-  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}</td>${_a()?`<td><span class="user-tag" style="background:${usr?.color}22;color:${usr?.color}">${usr?.name?.split(' ')[0]}</span></td>`:''}<td>${cl?.name||'?'}</td><td>${pr?.name||'?'}</td><td>${ac?.name||'?'}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
+  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}</td>${_a()?`<td><span class="user-tag" style="background:${usr?.color}22;color:${usr?.color}">${esc(usr?.name?.split(' ')[0])}</span></td>`:''}<td>${esc(cl?.name||'?')}</td><td>${esc(pr?.name||'?')}</td><td>${esc(ac?.name||'?')}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
 }
 
 function renderProjectBreakdown(entries){
@@ -828,14 +831,14 @@ function renderProjectBreakdown(entries){
     return`<div class="proj-donut-card">
       <div class="proj-donut-header">
         <div>
-          <div class="proj-donut-title">${proj.code||'—'} - ${proj.name}</div>
-          <div class="proj-donut-client">${client?.name||'?'}</div>
+          <div class="proj-donut-title">${esc(proj.code||'—')} - ${esc(proj.name)}</div>
+          <div class="proj-donut-client">${esc(client?.name||'?')}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px"><span style="background:${sC}22;color:${sC};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600">${sL}</span><div class="proj-donut-hours">${data.hours.toFixed(1)}h</div></div>
       </div>
       <div class="proj-donut-content">
         <div class="proj-donut-chart">${donutSvg}<div class="proj-donut-center"><div class="proj-donut-center-val">${data.hours.toFixed(0)}h</div><div class="proj-donut-center-lab">TOTALE</div></div></div>
-        <div class="proj-donut-legend">${actEntries.map((a,i)=>`<div class="proj-donut-item"><div class="proj-donut-color" style="background:${colors[i%colors.length]}"></div><div class="proj-donut-label">${a.name}</div><div class="proj-donut-value">${a.hours.toFixed(1)}h<span class="proj-donut-pct">${a.pct.toFixed(0)}%</span></div></div>`).join('')}</div>
+        <div class="proj-donut-legend">${actEntries.map((a,i)=>`<div class="proj-donut-item"><div class="proj-donut-color" style="background:${colors[i%colors.length]}"></div><div class="proj-donut-label">${esc(a.name)}</div><div class="proj-donut-value">${a.hours.toFixed(1)}h<span class="proj-donut-pct">${a.pct.toFixed(0)}%</span></div></div>`).join('')}</div>
       </div>
       ${_a()?`<div class="proj-donut-footer"><div class="proj-donut-stat"><span style="color:var(--text-dim)">💰 Costo:</span><span style="font-weight:600">€${data.cost.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">📈 Ricavo:</span><span style="font-weight:600;color:var(--green)">€${data.revenue.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">✨ Margine:</span><span style="font-weight:700;color:${data.revenue-data.cost>=0?'var(--green)':'var(--red)'}">€${(data.revenue-data.cost).toFixed(0)}</span></div></div>`:''}
     </div>`;
@@ -1005,7 +1008,7 @@ function downloadBackup(index){
   if(!backups[index])return;
   const b=backups[index];
   const d=new Date(b.date);
-  const fname=`timetrack_backup_${d.toISOString().slice(0,10)}_${d.getHours()}${d.getMinutes()}.json`;
+  const fname=`timetrack_backup_${localYMD(d)}_${d.getHours()}${d.getMinutes()}.json`;
   const blob=new Blob([JSON.stringify(b.data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -1090,7 +1093,7 @@ function showResetModal(){
     <div class="modal-field">
       <label style="font-weight:600">Seleziona l'admin da mantenere:</label>
       <select id="reset-admin-select" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
-        ${adminUsers.map(u=>`<option value="${u.id}">${u.name} (@${u.username||u.name})</option>`).join('')}
+        ${adminUsers.map(u=>`<option value="${u.id}">${esc(u.name)} (@${esc(u.username||u.name)})</option>`).join('')}
       </select>
     </div>
     
@@ -1134,8 +1137,8 @@ async function executeReset(){
   
   // Reset database mantenendo solo l'admin selezionato
   db={
-    nextId:100,
-    nextProjectNum:1,
+    nextId:db.nextId||100,
+    nextProjectNum:db.nextProjectNum||1,
     users:[{
       id:selectedAdmin.id,
       name:selectedAdmin.name,
@@ -1210,7 +1213,7 @@ function renderProjectReport(){
   projReportFilters.sort=document.getElementById('prf-sort')?.value||'deadline';
   const f=projReportFilters;
   const csel=document.getElementById('prf-client');
-  if(csel)csel.innerHTML='<option value="">— Tutti i clienti —</option>'+db.clients.map(c=>`<option value="${c.id}" ${f.clientId===c.id?'selected':''}>${c.name}</option>`).join('');
+  if(csel)csel.innerHTML='<option value="">— Tutti i clienti —</option>'+db.clients.map(c=>`<option value="${c.id}" ${f.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const projs=db.projects.filter(p=>{
     if(f.status&&p.status!==f.status)return false;
     if(!(p.status==='active'||db.entries.some(e=>e.projectId===p.id)))return false;
@@ -1256,13 +1259,13 @@ function renderProjectReport(){
     const sL=p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso';
     const riskBadge=risk.level?`<span class="proj-risk-badge ${risk.level}">${risk.label}</span>`:'';
     return`<div class="proj-card" style="cursor:pointer" onclick="openProjectDetail('${p.id}')">
-      <div class="proj-card-head"><div><div class="proj-card-title">${p.code||'—'} - ${p.name}</div><div class="proj-card-client">${cl?.name||'?'}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${riskBadge}<span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div></div>
+      <div class="proj-card-head"><div><div class="proj-card-title">${esc(p.code||'—')} - ${esc(p.name)}</div><div class="proj-card-client">${esc(cl?.name||'?')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${riskBadge}<span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div></div>
       <div class="proj-meters">
         <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.hP}%;background:${hC}"></div></div></div>
         ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${st.uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.bP}%;background:${bC}"></div></div></div>`:''}
         ${p.deadline?`<div><div class="proj-meter-label"><span>Scadenza: ${fmtDate(p.deadline)}</span><span style="color:${dlC};font-weight:600">${dlI}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${dlP}%;background:${dlC}"></div></div></div>`:''}
       </div>
-      <div class="proj-activities"><strong>Attività:</strong><div class="proj-act-list">${(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${a.name} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')}${!p.activities?.length?'<span style="font-style:italic">Nessuna</span>':''}</div></div>
+      <div class="proj-activities"><strong>Attività:</strong><div class="proj-act-list">${(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${esc(a.name)} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')}${!p.activities?.length?'<span style="font-style:italic">Nessuna</span>':''}</div></div>
     </div>`}).join('');
 }
 function openProjectDetail(id){
@@ -1275,14 +1278,14 @@ function openProjectDetail(id){
   const sL=p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso';
   let dlI='',dlC='var(--green)';
   if(p.deadline){const diff=st.dlDiff;if(diff<0){dlI=`Scaduta da ${Math.abs(diff)}gg`;dlC='var(--red)'}else if(diff<30){dlI=`${diff}gg rimasti`;dlC='var(--orange)'}else{dlI=`${diff}gg rimasti`}}
-  const actHtml=(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${a.name} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna attività</span>';
+  const actHtml=(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${esc(a.name)} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna attività</span>';
   const byUser={};st.pe.forEach(e=>{byUser[e.userId]=(byUser[e.userId]||0)+e.hours});
-  const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${u?.color||'#888'};margin-right:4px"></span>${u?.name||'?'} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
+  const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${u?.color||'#888'};margin-right:4px"></span>${esc(u?.name||'?')} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
   const recent=[...st.pe].sort((a,b)=>(b.date+(b.createdAt||'')).localeCompare(a.date+(a.createdAt||''))).slice(0,8);
-  const recentHtml=recent.map(e=>{const u=db.users.find(x=>x.id===e.userId);const a=p.activities?.find(x=>x.id===e.activityId);return`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);color:var(--text-dim);min-width:70px">${fmtDate(e.date)}</span>${_a()?`<span style="min-width:70px">${u?.name?.split(' ')[0]||'?'}</span>`:''}<span style="flex:1;color:var(--text-dim)">${a?.name||'—'}${e.note?' · '+e.note:''}</span><span style="font-weight:600">${e.hours}h</span></div>`}).join('')||'<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Nessuna registrazione</div>';
+  const recentHtml=recent.map(e=>{const u=db.users.find(x=>x.id===e.userId);const a=p.activities?.find(x=>x.id===e.activityId);return`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);color:var(--text-dim);min-width:70px">${fmtDate(e.date)}</span>${_a()?`<span style="min-width:70px">${esc(u?.name?.split(' ')[0]||'?')}</span>`:''}<span style="flex:1;color:var(--text-dim)">${esc(a?.name||'—')}${e.note?' · '+esc(e.note):''}</span><span style="font-weight:600">${e.hours}h</span></div>`}).join('')||'<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Nessuna registrazione</div>';
   const stBtn=(s,l,col,bg)=>`<button class="mini-btn" onclick="setProjectStatus('${p.id}','${s}');renderProjectReport();openProjectDetail('${p.id}')"${p.status===s?` style="background:${bg};color:${col};border-color:${col}"`:''}>${l}</button>`;
-  openModal(`<h3>${p.code||'—'} - ${p.name}</h3>
-    <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 14px;flex-wrap:wrap"><span class="proj-card-client">${cl?.name||'?'}</span><span style="color:var(--text-dim);font-size:12px">Ref: ${p.referente||'—'}</span><span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div>
+  openModal(`<h3>${esc(p.code||'—')} - ${esc(p.name)}</h3>
+    <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 14px;flex-wrap:wrap"><span class="proj-card-client">${esc(cl?.name||'?')}</span><span style="color:var(--text-dim);font-size:12px">Ref: ${esc(p.referente||'—')}</span><span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div>
     <div class="proj-meters">
       <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.hP}%;background:${hC}"></div></div></div>
       ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${st.uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.bP}%;background:${bC}"></div></div></div>`:''}
@@ -1307,22 +1310,27 @@ function renderManage(){
   renderMC();
 }
 function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};renderManage()}
+function _mgmtFilteredProjects(){
+  return db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
+}
+function _mgmtProjRow(p){
+  const cl=db.clients.find(c=>c.id===p.clientId);
+  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
+}
 function filterMgmtProjects(){
   mgmtProjectFilter.clientId=document.getElementById('mpf-client').value;
   mgmtProjectFilter.search=document.getElementById('mpf-search').value.toLowerCase();
   const listEl=document.getElementById('mpf-list');if(!listEl)return;
-  const filtered=db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
-  listEl.innerHTML=filtered.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${p.code||'—'} - ${p.name}</span><span class="mgmt-item-meta">${cl?.name||'?'}</span><span class="mgmt-item-meta">Ref: ${p.referente||'—'}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${u.name}" style="width:20px;height:20px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${u.name.charAt(0).toUpperCase()}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${a.name}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;}).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>';
+  listEl.innerHTML=_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>';
 }
 function renderMC(){
   const el=document.getElementById('mgmt-content');if(!activeMgmt){el.innerHTML='';return}
   if(activeMgmt==='client'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${c.name}</span><span class="mgmt-item-meta">Ref: ${c.referente||'—'}</span>${c.email?`<span class="mgmt-item-meta">${c.email}</span>`:''}<span class="status-badge" style="background:${c.active?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${c.active?'var(--green)':'#888'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">✏</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${c.active?'var(--green)':'#888'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">✏</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='project'){
-    const _fpList=db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
-    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${c.name}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${mgmtProjectFilter.search.replace(/"/g,'&quot;')}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_fpList.map(p=>{const cl=db.clients.find(c=>c.id===p.clientId);return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${p.code||'—'} - ${p.name}</span><span class="mgmt-item-meta">${cl?.name||'?'}</span><span class="mgmt-item-meta">Ref: ${p.referente||'—'}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${u.name}" style="width:20px;height:20px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${u.name.charAt(0).toUpperCase()}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${a.name}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`}).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${u.name}</span><span class="mgmt-item-meta">@${u.username||'—'}</span>${u.email?`<span class="mgmt-item-meta">${u.email}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1336,9 +1344,9 @@ function renderRatesTab(){
   const el=document.getElementById('mgmt-content');
   const active=db.rates.filter(r=>r.to===null).sort((a,b)=>b.from.localeCompare(a.from));
   const history=db.rates.filter(r=>r.to!==null).sort((a,b)=>b.from.localeCompare(a.from));
-  const uName=id=>id?db.users.find(u=>u.id===id)?.name||'?':'(tutti)';
-  const cName=id=>id?db.clients.find(c=>c.id===id)?.name||'?':'(tutti)';
-  const pName=id=>id?db.projects.find(p=>p.id===id)?.name||'?':'(tutte)';
+  const uName=id=>id?esc(db.users.find(u=>u.id===id)?.name||'?'):'(tutti)';
+  const cName=id=>id?esc(db.clients.find(c=>c.id===id)?.name||'?'):'(tutti)';
+  const pName=id=>id?esc(db.projects.find(p=>p.id===id)?.name||'?'):'(tutte)';
   const rowHTML=r=>`<div class="mgmt-item" style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto auto;gap:8px;align-items:center">
     <span class="mgmt-item-meta">${uName(r.userId)}</span>
     <span class="mgmt-item-meta">${cName(r.clientId)}</span>
@@ -1355,9 +1363,9 @@ function renderRatesTab(){
     <div class="mgmt-list">${active.map(rowHTML).join('')||'<div style="color:var(--text-dim);padding:12px 0">Nessuna tariffa attiva</div>'}</div>
     ${history.length?`<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Storico (${history.length})</summary><div class="mgmt-list" style="margin-top:8px;opacity:.7">${history.map(rowHTML).join('')}</div></details>`:''}
     <div class="mgmt-form" style="margin-top:16px">
-      <select id="nr-user"><option value="">— Utente (tutti) —</option>${db.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>
-      <select id="nr-client"><option value="">— Cliente (tutti) —</option>${db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
-      <select id="nr-project"><option value="">— Commessa (tutte) —</option>${db.projects.map(p=>`<option value="${p.id}">${p.code} ${p.name}</option>`).join('')}</select>
+      <select id="nr-user"><option value="">— Utente (tutti) —</option>${db.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
+      <select id="nr-client"><option value="">— Cliente (tutti) —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+      <select id="nr-project"><option value="">— Commessa (tutte) —</option>${db.projects.map(p=>`<option value="${p.id}">${esc(p.code)} ${esc(p.name)}</option>`).join('')}</select>
       <input id="nr-cost" type="number" step="0.5" placeholder="Costo €/h (vuoto=non impostato)">
       <input id="nr-rev" type="number" step="0.5" placeholder="Ricavo €/h (vuoto=non impostato)">
       <input id="nr-from" type="date" placeholder="Valida dal" title="Valida dal">
@@ -1385,9 +1393,9 @@ function addRate(){
 function editRateModal(id){
   const r=db.rates.find(x=>x.id===id);if(!r)return;
   openModal(`<h3>✏ Modifica Tariffa</h3>
-    <div class="modal-field"><label>Utente</label><select id="er-user"><option value="">— Tutti —</option>${db.users.map(u=>`<option value="${u.id}" ${u.id===r.userId?'selected':''}>${u.name}</option>`).join('')}</select></div>
-    <div class="modal-field"><label>Cliente</label><select id="er-client"><option value="">— Tutti —</option>${db.clients.map(c=>`<option value="${c.id}" ${c.id===r.clientId?'selected':''}>${c.name}</option>`).join('')}</select></div>
-    <div class="modal-field"><label>Commessa</label><select id="er-project"><option value="">— Tutte —</option>${db.projects.map(p=>`<option value="${p.id}" ${p.id===r.projectId?'selected':''}>${p.code} ${p.name}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Utente</label><select id="er-user"><option value="">— Tutti —</option>${db.users.map(u=>`<option value="${u.id}" ${u.id===r.userId?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Cliente</label><select id="er-client"><option value="">— Tutti —</option>${db.clients.map(c=>`<option value="${c.id}" ${c.id===r.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Commessa</label><select id="er-project"><option value="">— Tutte —</option>${db.projects.map(p=>`<option value="${p.id}" ${p.id===r.projectId?'selected':''}>${esc(p.code)} ${esc(p.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Costo €/h</label><input type="number" id="er-cost" step="0.5" value="${r.costRate!=null?r.costRate:''}" placeholder="vuoto = non impostato"></div>
     <div class="modal-field"><label>Ricavo €/h</label><input type="number" id="er-rev" step="0.5" value="${r.clientRate!=null?r.clientRate:''}" placeholder="vuoto = non impostato"></div>
     <div class="modal-field"><label>Valida dal</label><input type="date" id="er-from" value="${r.from}"></div>
@@ -1411,13 +1419,13 @@ function delRate(id){if(!confirm('Eliminare questa tariffa?'))return;db.rates=db
 
 // CRUD Clients
 function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim();if(!n){showToast('Nome richiesto','error');return}db.clients.push({id:gid(),name:n,referente:ref,email,active:true});saveDB();showToast(n+' aggiunto');renderManage()}
-function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${c.name}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${c.referente||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${c.email||''}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
+function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${esc(c.name)}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${esc(c.referente||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${esc(c.email||'')}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
 function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;c.name=document.getElementById('ec-name').value.trim();c.referente=document.getElementById('ec-ref').value.trim();c.email=document.getElementById('ec-email').value.trim();c.active=document.getElementById('ec-active').value==='true';saveDB();closeModal();showToast('Aggiornato');renderManage()}
 function delClient(id){if(!confirm('Eliminare il cliente e tutte le sue commesse e registrazioni?'))return;db.projects=db.projects.filter(p=>p.clientId!==id);db.entries=db.entries.filter(e=>e.clientId!==id);db.clients=db.clients.filter(c=>c.id!==id);saveDB();showToast('Eliminato');renderManage()}
 
 // CRUD Projects
 function addProject(){const cid=document.getElementById('mp-client').value,n=document.getElementById('mp-name').value.trim(),ref=document.getElementById('mp-ref').value.trim(),b=parseFloat(document.getElementById('mp-budget').value)||0,bh=parseFloat(document.getElementById('mp-hours').value)||0,dl=document.getElementById('mp-deadline').value||'';if(!cid){showToast('Seleziona cliente','error');return}if(!n){showToast('Nome richiesto','error');return}if(!db.nextProjectNum)db.nextProjectNum=1;const year=new Date().getFullYear().toString().slice(-2);const code=String(db.nextProjectNum).padStart(3,'0')+'/'+year;db.projects.push({id:gid(),clientId:cid,name:n,code,referente:ref,status:'active',budget:b,budgetHours:bh,deadline:dl,activities:[],assignedUsers:[]});db.nextProjectNum++;saveDB();showToast(n+' aggiunta');renderManage()}
-function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${u.color};display:inline-block"></span>${u.name}</label></div>`).join('');openModal(`<h3>✏ Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${p.code||''}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${p.name}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${c.name}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${p.referente||''}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
+function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${u.color};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>✏ Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
 function saveProjectEdit(id){const p=db.projects.find(x=>x.id===id);if(!p)return;p.code=document.getElementById('ep-code').value.trim();p.name=document.getElementById('ep-name').value.trim();p.clientId=document.getElementById('ep-client').value;p.referente=document.getElementById('ep-ref').value.trim();p.budget=parseFloat(document.getElementById('ep-budget').value)||0;p.budgetHours=parseFloat(document.getElementById('ep-hours').value)||0;p.deadline=document.getElementById('ep-deadline').value||'';p.status=document.getElementById('ep-status').value;p.assignedUsers=db.users.filter(u=>document.getElementById('ep-usr-'+u.id)?.checked).map(u=>u.id);saveDB();closeModal();showToast('Commessa aggiornata');renderManage()}
 function delProject(id){if(!confirm('Eliminare la commessa e tutte le registrazioni associate?'))return;db.entries=db.entries.filter(e=>e.projectId!==id);db.projects=db.projects.filter(p=>p.id!==id);saveDB();showToast('Eliminata');renderManage()}
 function setProjectStatus(id,status){const p=db.projects.find(x=>x.id===id);if(!p)return;p.status=status;saveDB();showToast('Stato aggiornato');renderManage()}
@@ -1425,13 +1433,13 @@ window.setProjectStatus=setProjectStatus;
 
 // CRUD Activities (per project)
 function addAct(pid){const inp=document.getElementById('sa-'+pid);const n=inp.value.trim();if(!n){showToast('Nome richiesto','error');return}const p=db.projects.find(x=>x.id===pid);if(!p)return;if(!p.activities)p.activities=[];p.activities.push({id:gid(),name:n});saveDB();showToast(n+' aggiunta');renderManage()}
-function editActModal(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;openModal(`<h3>✏ Modifica Attività</h3><div class="modal-field"><label>Nome</label><input id="ea-name" value="${a.name}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveActEdit('${pid}','${aid}')">Salva</button></div>`)}
+function editActModal(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;openModal(`<h3>✏ Modifica Attività</h3><div class="modal-field"><label>Nome</label><input id="ea-name" value="${esc(a.name)}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveActEdit('${pid}','${aid}')">Salva</button></div>`)}
 function saveActEdit(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;a.name=document.getElementById('ea-name').value.trim();saveDB();closeModal();showToast('Aggiornata');renderManage()}
 function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const p=db.projects.find(x=>x.id===pid);if(!p)return;p.activities=p.activities.filter(a=>a.id!==aid);saveDB();showToast('Eliminata');renderManage()}
 
 // CRUD Users
 function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),active:true});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
-function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${u.name}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${u.username||''}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${u.email||''}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
+function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${esc(u.email||'')}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
 function saveUserEdit(id){const u=db.users.find(x=>x.id===id);if(!u)return;u.name=document.getElementById('eu-name').value.trim();u.username=document.getElementById('eu-username').value.trim();u.email=document.getElementById('eu-email').value.trim();u.role=document.getElementById('eu-role').value;saveDB();closeModal();showToast('Aggiornato');renderManage();renderLogin()}
 function delUser(id){if(db.users.length<=1){showToast('Serve almeno un utente','error');return}if(id===currentUser.id){showToast('Non puoi eliminare te stesso','error');return}if(!confirm('Eliminare questo utente e tutte le sue registrazioni?'))return;db.entries=db.entries.filter(e=>e.userId!==id);db.users=db.users.filter(u=>u.id!==id);saveDB();showToast('Eliminato');renderManage();renderLogin()}
 function toggleUserActive(uid){if(!_a())return;const u=db.users.find(x=>x.id===uid);if(!u)return;if(u.role==='admin'){showToast('Non puoi sospendere un amministratore','error');return}if(uid===currentUser.id){showToast('Non puoi sospendere te stesso','error');return}u.active=u.active===false?true:false;saveDB();showToast(u.active?u.name+' riattivato':u.name+' sospeso');renderManage();renderLogin()}
@@ -1806,10 +1814,22 @@ window.editRateModal=editRateModal;
 window.saveRateEdit=saveRateEdit;
 window.delRate=delRate;
 
+// ═══ OROLOGIO HEADER ═══
+function updateHeaderClock(){
+  const el=document.getElementById('header-clock');
+  if(!el)return;
+  const now=new Date();
+  const date=now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const time=now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=`<span class="hc-date">${date.charAt(0).toUpperCase()+date.slice(1)}</span><span class="hc-time">${time}</span>`;
+}
+
 // ═══ INIT ═══
 (async function(){
   await loadDB();
   selectedWeek=getWeekStart(todayStr());
   initAutoBackup();
   renderLogin();
+  updateHeaderClock();
+  setInterval(updateHeaderClock,1000);
 })();
