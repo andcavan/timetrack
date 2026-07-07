@@ -186,14 +186,32 @@ Ora la anon key non può più leggere nulla del vecchio database. La tabella `ti
 
 ### 2.2 Creare nuovi utenti (d'ora in poi)
 
-1. Dashboard Supabase → **Authentication → Users → Invite user** (oppure "Add user → Send invitation").
-2. Inserisci l'email della persona.
-3. Se il dashboard permette di inserire **User Metadata**, aggiungi:
-   ```json
-   {"name":"Nome Cognome","username":"nome","role":"operator"}
-   ```
-   (`role`: `operator` oppure `admin`). Se non lo permette in fase di invito, l'utente verrà creato come operator con il nome uguale all'email: correggi poi nome/username/ruolo dall'app in **Gestione → Utenti → ✏**.
-4. La persona riceve l'invito e imposta la password. Il profilo compare automaticamente nell'app.
+**Metodo principale — direttamente dall'app** (richiede la Edge Function, vedi 2.2.1):
+
+1. Accedi come admin → **Gestione → Utenti → + Nuovo utente**.
+2. Compila nome, email, username e ruolo → **Crea e genera link**.
+3. L'app mostra il **link di invito** con bottone 📋 Copia: invialo alla persona (WhatsApp, Teams, ...). Cliccandolo imposta la password ed entra. Il link scade in ~24 ore.
+
+Analogamente, il bottone **🔑** accanto a un utente genera un link di **reimpostazione password** da girare a mano (niente email, nessun rate limit).
+
+#### 2.2.1 Deploy della Edge Function `invite-user` (una volta sola)
+
+La creazione account richiede la service_role key, che non può stare nel browser: gira in una **Edge Function** sul server Supabase, che verifica che il chiamante sia un admin attivo.
+
+1. Dashboard Supabase → **Edge Functions** → **Deploy a new function** (editor nel browser, "via Editor").
+2. Nome funzione: `invite-user` (esattamente questo).
+3. Cancella il codice di esempio e incolla tutto il contenuto di `supabase/functions/invite-user/index.ts`.
+4. **Deploy**. Lascia attiva la verifica JWT (impostazione predefinita).
+
+**Fallback senza Edge Function** — gli script locali continuano a funzionare:
+
+```powershell
+cd "c:\Users\prog3\Desktop\APP MECCANICA\timetrack-supabase\migrations"
+$env:SUPABASE_URL = "https://latuujorgnaksdhxazfb.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY = "(la service_role dal Dashboard → Settings → API)"
+node new-user.mjs mario.rossi@azienda.it "Mario Rossi" mario     # nuovo utente (+ "admin" opzionale)
+node gen-links.mjs email@persona.it                              # nuovo link per utente esistente
+```
 
 Per sospendere qualcuno: **Gestione → Utenti → ⏸ Sospendi** (non serve cancellarlo).
 

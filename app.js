@@ -315,16 +315,23 @@ async function submitSetPwd(){
   await initSession();
 }
 
-// Reset password (solo admin): invia la mail di recovery
+// Reset password (solo admin): genera un link di reimpostazione via
+// Edge Function (nessuna email: il link va girato a mano alla persona)
 async function resetUserPassword(uid){
   if(!_a())return;
   const u=db.users.find(x=>x.id===uid);
   if(!u)return;
   if(!u.email||!u.email.includes('@')){showToast('Utente senza email','error');return}
-  if(!confirm(`Inviare a ${u.email} l'email per reimpostare la password?`))return;
-  const {error}=await supa.auth.resetPasswordForEmail(u.email,{redirectTo:location.origin+location.pathname});
-  if(error){console.error(error);showToast('Invio non riuscito','error');return}
-  showToast('Email di reset inviata');
+  if(!confirm(`Generare un link di reimpostazione password per ${u.name} (${u.email})?`))return;
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',email:u.email}});
+  if(error){
+    console.error(error);
+    let msg='Generazione non riuscita';
+    try{const ctx=await error.context?.json();if(ctx?.error)msg=ctx.error}catch(e){}
+    showToast(msg,'error');
+    return;
+  }
+  showInviteLinkModal(`Link per ${esc(u.name)}`,data.link);
 }
 
 // ═══ HEADER ═══
@@ -875,7 +882,7 @@ function renderMC(){
   } else if(activeMgmt==='project'){
     el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Invia email di reset password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1029,17 +1036,57 @@ async function saveActEdit(pid,aid){const n=document.getElementById('ea-name').v
 async function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const ok=await dbWrite(supa.from('activities').delete().eq('id',aid),'Eliminata');if(ok)renderManage()}
 
 // CRUD Users
-// Gli account si creano SOLO per invito (Supabase Auth): la creazione va
-// fatta dal Dashboard Supabase (Authentication → Users → Invite user,
-// impostando nei metadata name/username/role) o dallo script di migrazione.
+// La creazione account passa dalla Edge Function "invite-user" (server-side,
+// solo admin): il browser non tocca mai la service_role key. La funzione
+// restituisce il link di invito da girare alla persona (nessuna email).
 function addUser(){
   openModal(`<h3>➕ Nuovo utente</h3>
-    <p style="font-size:13px;color:var(--text-dim);line-height:1.6">Per sicurezza i nuovi account si creano dal <b>Dashboard Supabase</b>:<br>
-    1. Authentication → Users → <b>Invite user</b> con l'email della persona<br>
-    2. In "User Metadata" inserire: <code>{"name":"Nome Cognome","username":"nome","role":"operator"}</code><br>
-    3. La persona riceve l'email di invito e imposta la propria password<br><br>
-    Il profilo compare qui automaticamente al primo accesso.</p>
-    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Ho capito</button></div>`);
+    <div class="modal-field"><label>Nome e cognome</label><input id="nu-name" placeholder="Mario Rossi"></div>
+    <div class="modal-field"><label>Email (sarà il login)</label><input type="email" id="nu-email" placeholder="mario.rossi@azienda.it"></div>
+    <div class="modal-field"><label>Username</label><input id="nu-username" placeholder="mario"></div>
+    <div class="modal-field"><label>Ruolo</label><select id="nu-role"><option value="operator">Operatore</option><option value="admin">Admin</option></select></div>
+    <div id="nu-error" style="color:var(--red);font-size:13px;display:none;margin-bottom:8px"></div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" id="nu-submit" onclick="submitNewUser()">Crea e genera link</button></div>`);
+  setTimeout(()=>document.getElementById('nu-name')?.focus(),50);
+}
+async function submitNewUser(){
+  const name=document.getElementById('nu-name').value.trim();
+  const email=document.getElementById('nu-email').value.trim().toLowerCase();
+  const username=document.getElementById('nu-username').value.trim();
+  const role=document.getElementById('nu-role').value;
+  const err=document.getElementById('nu-error');
+  const showErr=m=>{err.textContent=m;err.style.display='block'};
+  err.style.display='none';
+  if(!name||!username){showErr('Nome e username sono obbligatori');return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){showErr('Email non valida');return}
+  const btn=document.getElementById('nu-submit');
+  btn.disabled=true;btn.textContent='Creazione...';
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role}});
+  if(error){
+    btn.disabled=false;btn.textContent='Crea e genera link';
+    let msg='Creazione non riuscita';
+    try{const ctx=await error.context?.json();if(ctx?.error)msg=ctx.error}catch(e){}
+    showErr(msg);
+    return;
+  }
+  try{await loadAll()}catch(e){console.error(e)}
+  showInviteLinkModal(`Utente ${esc(name)} creato`,data.link);
+  renderManage();
+}
+// Modal riutilizzabile: mostra un link di invito/recovery con bottone Copia
+function showInviteLinkModal(title,link){
+  openModal(`<h3>✅ ${title}</h3>
+    <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Invia questo link alla persona (WhatsApp, Teams, email...). Cliccandolo imposterà la propria password. <b>Scade in circa 24 ore.</b></p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="il-link" readonly value="${esc(link)}" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
+      <button class="add-btn-sm" onclick="copyInviteLink()">📋 Copia</button>
+    </div>
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Chiudi</button></div>`);
+}
+async function copyInviteLink(){
+  const el=document.getElementById('il-link');
+  try{await navigator.clipboard.writeText(el.value);showToast('Link copiato!')}
+  catch(e){el.select();document.execCommand('copy');showToast('Link copiato!')}
 }
 function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email (gestita dall'account di accesso)</label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled style="opacity:.6"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
 async function saveUserEdit(id){
@@ -1083,6 +1130,8 @@ window.editActModal=editActModal;
 window.saveActEdit=saveActEdit;
 window.delAct=delAct;
 window.addUser=addUser;
+window.submitNewUser=submitNewUser;
+window.copyInviteLink=copyInviteLink;
 window.editUserModal=editUserModal;
 window.saveUserEdit=saveUserEdit;
 window.toggleUserActive=toggleUserActive;
