@@ -1,2 +1,218 @@
-# timetrack
-gestione commesse
+# TimeTrack — gestione commesse
+
+App di registrazione ore con Supabase (Auth + Postgres + RLS).
+
+## Sicurezza (versione 2)
+
+- **Login con Supabase Auth** (email + password verificate lato server, sessione JWT).
+- **Dati normalizzati** in tabelle (`profiles`, `clients`, `projects`, `activities`, `entries`, `rates`, ...) protette da **Row Level Security**:
+  - un *operator* vede e modifica **solo le proprie ore**; tariffe, costi e budget € non gli vengono mai inviati;
+  - un *admin* vede tutto; il ruolo è protetto lato server (nessuna auto-promozione possibile);
+  - la anon key (pubblica per progettazione) **senza sessione non accede a nulla**.
+- Le tariffe delle ore vengono "fotografate" da un trigger server-side (`entry_costs`), mai calcolate nel browser.
+- Script CDN pinnati con Subresource Integrity.
+
+---
+
+# Guida alla migrazione passo passo
+
+> **Tempo richiesto:** Fase 0 quando vuoi, senza fretta (la vecchia app continua a funzionare).
+> Fase 1 in una finestra concordata di ~30 minuti in cui nessuno registra ore.
+>
+> **Prerequisiti sul tuo PC:** [Node.js](https://nodejs.org) installato (versione 18 o superiore — verifica con `node --version` in un terminale).
+
+## FASE 0 — Preparazione (nessun impatto sugli utenti)
+
+### 0.1 Inserisci le email degli utenti nella vecchia app
+
+1. Apri la vecchia app (quella attualmente in produzione) e accedi come **admin**.
+2. Vai in **Gestione → Utenti**.
+3. Per ogni utente: clicca **✏ (Modifica)** e compila il campo **Email** con l'indirizzo email reale della persona, poi **Salva**.
+4. Attendi che il badge in basso a destra dica **"✓ Sincronizzato"**.
+
+> ⚠️ Ogni utente riceverà su quell'email il link di invito per impostare la nuova password. Un'email sbagliata = utente che non può accedere. Ricontrollale.
+
+### 0.2 Avvisa gli utenti
+
+Comunica a tutti, con qualche giorno di anticipo:
+- il giorno e l'ora della migrazione (es. "venerdì dalle 13:00 alle 13:30 non registrate ore");
+- che riceveranno **un'email di invito** con cui impostare la loro nuova password;
+- che d'ora in poi si accede con **email + password** (non più con lo username);
+- di aprire l'app **online** almeno una volta prima della migrazione (per scaricare eventuali ore rimaste solo in locale sul loro PC).
+
+### 0.3 Crea le nuove tabelle nel database
+
+1. Apri il [Dashboard Supabase](https://supabase.com/dashboard) → il tuo progetto.
+2. Menu a sinistra → **SQL Editor** → **New query**.
+3. Apri il file `migrations/schema.sql` in VS Code, seleziona tutto (`Ctrl+A`), copia (`Ctrl+C`).
+4. Incolla nel SQL Editor (`Ctrl+V`) e premi **Run** (o `Ctrl+Invio`).
+5. **Risultato atteso:** in fondo compare una tabella con 9 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`) tutte con `rowsecurity = true`.
+
+> Le nuove tabelle convivono con la vecchia `timetrack_data`: la vecchia app continua a funzionare come prima.
+> Se rilanci lo script per errore, l'unico messaggio ignorabile è *"already member of publication"*; gli errori *"already exists"* indicano che le tabelle ci sono già (va bene così).
+
+### 0.4 Configura l'autenticazione nel Dashboard
+
+Nel Dashboard Supabase:
+
+1. **Authentication → Sign In / Providers** (o "Sign In / Up"):
+   - **disattiva** "Allow new users to sign up" → nessuno può auto-registrarsi; gli account si creano solo per invito;
+   - in **Password**: imposta lunghezza minima **8** caratteri.
+2. **Authentication → URL Configuration**:
+   - **Site URL** = l'indirizzo esatto a cui è pubblicata l'app (es. `https://tuodominio.it/timetrack/`).
+     È l'indirizzo su cui atterrano i link di invito e di reset password: se è sbagliato, gli inviti non funzionano.
+
+### 0.5 Recupera le chiavi per lo script di migrazione
+
+1. Dashboard → **Settings → API** (oppure "API Keys").
+2. Copia:
+   - **Project URL** (es. `https://latuujorgnaksdhxazfb.supabase.co`);
+   - la chiave **service_role** (⚠️ è la chiave "padrona": non condividerla, non committarla su git, non metterla mai nell'app — si usa solo sul tuo PC per la migrazione).
+
+### 0.6 Prepara lo script sul tuo PC
+
+Apri un terminale (PowerShell) nella cartella del progetto:
+
+```powershell
+cd "c:\Users\prog3\Desktop\APP MECCANICA\timetrack-supabase\migrations"
+npm install @supabase/supabase-js
+```
+
+Poi imposta le variabili d'ambiente (valgono solo per quella finestra di terminale):
+
+```powershell
+$env:SUPABASE_URL = "https://latuujorgnaksdhxazfb.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODIwMTk3MiwiZXhwIjoyMDkzNzc3OTcyfQ.qOY2H93ttWvy1PCyZsT6_UyDkYe0Ws73R1UBAd-g9V4"
+```
+
+### 0.7 Prova generale (senza scrivere nulla)
+
+```powershell
+node migrate.mjs --dry-run
+```
+
+Lo script legge i dati veri e stampa cosa farebbe: quanti utenti/clienti/commesse/ore, a chi manderebbe l'invito. **Non scrive nulla.**
+
+- Se segnala **"Utenti senza email valida"**: torna al punto 0.1 e completa le email; in alternativa, per utenti senza email, si può usare `--fallback-domain=tuodominio.it` (crea account fittizi `username@tuodominio.it` con password temporanea da comunicare a voce — sconsigliato se puoi avere le email vere).
+- Se segnala entry "scartate": sono registrazioni orfane di commesse/clienti cancellati in passato; verranno saltate (normale).
+
+## FASE 1 — Migrazione (finestra di ~30 minuti)
+
+Esegui questi passi **in ordine**, all'orario annunciato.
+
+### 1.1 Backup di sicurezza
+
+1. Nella vecchia app (admin): **Gestione → Backup → ⬇ Esporta JSON**. Salva il file in un posto sicuro.
+2. (Extra, consigliato) SQL Editor → `select data from timetrack_data where id = 1;` → clic destro sul risultato → copia/scarica.
+
+### 1.2 Congela la vecchia app (read-only)
+
+SQL Editor → New query → incolla ed esegui:
+
+```sql
+DROP POLICY IF EXISTS "allow_anon_single_row" ON timetrack_data;
+CREATE POLICY "anon_readonly_single_row" ON timetrack_data
+  FOR SELECT TO anon USING (id = 1);
+```
+
+Da questo momento la vecchia app **legge ma non salva**: se qualcuno prova a registrare ore vedrà "✗ Errore sync" (per questo la finestra va annunciata).
+
+### 1.3 Esegui la migrazione vera
+
+Nel terminale di prima (con le variabili ancora impostate):
+
+```powershell
+node migrate.mjs
+```
+
+Lo script:
+- crea gli account e **invia le email di invito**;
+- travasa clienti, commesse, attività, tariffe, ore e costi storici;
+- alla fine stampa una sezione **"Verifica"** con i conteggi.
+
+✅ **Prosegui solo se tutti i conteggi hanno la spunta ✓** (incluse le "ore totali").
+❌ Se qualcosa non torna: NON pubblicare la nuova app; la vecchia è ancora lì in sola lettura. Mandami l'output e lo sistemiamo (lo script si può rilanciare: riconosce gli utenti già creati e non duplica i dati).
+
+> Se lo script stampa **"PASSWORD TEMPORANEE"** (solo con `--fallback-domain`): salvale e comunicale a voce agli interessati.
+
+### 1.4 Pubblica la nuova app
+
+Sostituisci sul tuo hosting i file con le versioni nuove:
+- `index.html`
+- `app.js`
+- `style.css` (invariato, ma male non fa)
+
+Il metodo dipende da dove è pubblicata l'app (FTP, cartella condivisa, ecc.): è una semplice copia di file.
+
+### 1.5 Chiudi definitivamente il vecchio blob
+
+SQL Editor:
+
+```sql
+DROP POLICY IF EXISTS "anon_readonly_single_row" ON timetrack_data;
+```
+
+Ora la anon key non può più leggere nulla del vecchio database. La tabella `timetrack_data` resta come archivio di emergenza.
+
+### 1.6 Primo accesso e verifica
+
+1. Apri la nuova app: deve comparire il login con **Email**.
+2. Controlla la **tua** casella email: apri l'invito → si apre l'app con la schermata **"Imposta la tua password"** → scegli la password (min 8) → entri.
+3. Verifica: le tue ore, le commesse, i clienti e (da admin) tariffe e budget devono esserci tutti.
+4. Registra un'ora di prova e cancellala: deve funzionare.
+
+## FASE 2 — Dopo la migrazione
+
+### 2.1 Assistenza agli utenti (primo giorno)
+
+- **"Non ho ricevuto l'invito"** → far controllare lo spam; se non c'è: Gestione → Utenti → **🔑** (invia email di reset password), che arriva sullo stesso indirizzo.
+- **"Ho sbagliato a scrivere la password due volte"** → di nuovo il bottone **🔑** in Gestione → Utenti.
+- **"Link di invito scaduto"** → idem, il bottone **🔑** genera un nuovo link valido.
+
+### 2.2 Creare nuovi utenti (d'ora in poi)
+
+1. Dashboard Supabase → **Authentication → Users → Invite user** (oppure "Add user → Send invitation").
+2. Inserisci l'email della persona.
+3. Se il dashboard permette di inserire **User Metadata**, aggiungi:
+   ```json
+   {"name":"Nome Cognome","username":"nome","role":"operator"}
+   ```
+   (`role`: `operator` oppure `admin`). Se non lo permette in fase di invito, l'utente verrà creato come operator con il nome uguale all'email: correggi poi nome/username/ruolo dall'app in **Gestione → Utenti → ✏**.
+4. La persona riceve l'invito e imposta la password. Il profilo compare automaticamente nell'app.
+
+Per sospendere qualcuno: **Gestione → Utenti → ⏸ Sospendi** (non serve cancellarlo).
+
+### 2.3 Verifiche di sicurezza (consigliate, 5 minuti)
+
+Loggato come **operator** (non admin), apri la console del browser (`F12` → Console) e incolla:
+
+```js
+(await supa.from('rates').select('*')).data          // atteso: []
+(await supa.from('entry_costs').select('*')).data    // atteso: []
+(await supa.from('project_finance').select('*')).data // atteso: []
+(await supa.from('entries').select('*')).data        // atteso: SOLO le proprie righe
+await supa.from('profiles').update({role:'admin'}).eq('id',(await supa.auth.getUser()).data.user.id)
+// atteso: error "Campo protetto: modificabile solo da un amministratore"
+```
+
+Se tutti i risultati corrispondono, la RLS sta facendo il suo lavoro.
+
+### 2.4 Dopo 2–4 settimane di esercizio stabile
+
+Elimina il vecchio archivio (prima assicurati di avere l'export JSON del punto 1.1):
+
+```sql
+DROP TABLE timetrack_data;
+```
+
+## Rollback d'emergenza (solo se qualcosa va storto)
+
+Finché `timetrack_data` esiste puoi tornare alla vecchia app in pochi minuti:
+
+1. Ripubblica i **vecchi** `index.html` e `app.js` (recuperali da git: `git checkout <commit> -- index.html app.js`).
+2. SQL Editor:
+   ```sql
+   CREATE POLICY "allow_anon_single_row" ON timetrack_data
+     FOR ALL TO anon USING (id = 1) WITH CHECK (id = 1);
+   ```
+3. Le ore eventualmente registrate nella nuova app nel frattempo restano nelle nuove tabelle: si possono riesportare con una query e reinserire a mano.

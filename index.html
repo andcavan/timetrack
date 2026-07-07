@@ -7,10 +7,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Versioni pinnate + Subresource Integrity: se il CDN venisse compromesso il browser rifiuta lo script -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js" integrity="sha384-rwykjmWNwVxboyFmvK9OXN0wj9hnMHA2aAHtits54DuACyCq0M2PrSNxhRb+hvXT" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:#888;box-shadow:0 4px 12px rgba(0,0,0,.3)">○ Caricamento...</div>
@@ -25,7 +26,7 @@
     <p class="login-sub">Gestione Ore di Lavoro</p>
     <form id="login-form" onsubmit="return false">
       <div class="login-field">
-        <input type="text" id="login-username" placeholder="Username" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
+        <input type="email" id="login-username" placeholder="Email" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-remember">
         <label><input type="checkbox" id="login-remember"> Ricordami</label>
@@ -182,7 +183,7 @@
       <div class="mgmt-tabs" id="mgmt-tabs"></div>
       <div id="mgmt-content"></div>
       <div class="cloud-section">
-        <div><strong>☁ Sync Cloud</strong><p>Dati salvati in localStorage. Esporta JSON per backup su Google Drive/Dropbox. Trascina un file .json per importare.</p></div>
+        <div><strong>☁ Sync Cloud</strong><p>Dati salvati su Supabase con accesso autenticato e permessi per ruolo. Backup automatici lato server; export JSON disponibile nella tab Backup.</p></div>
       </div>
     </div>
   </div>

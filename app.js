@@ -2,204 +2,87 @@
 const App = {};
 
 // ═══════════════════════════════════════
-//  DATABASE
+//  DATABASE (in-memory, ricomposto dalle tabelle Supabase)
+//  La sicurezza è garantita da Supabase Auth + RLS lato server:
+//  gli operator ricevono solo le proprie entries e MAI tariffe,
+//  costi o budget (le query su quelle tabelle tornano vuote).
 // ═══════════════════════════════════════
-const DB_KEY='timetrack_v5';
-const defaultDB={
-  users:[
-    {id:'u1',name:'Marco Rossi',username:'marco',role:'admin',color:'#E85D3A'},
-    {id:'u2',name:'Laura Bianchi',username:'laura',role:'operator',color:'#3A7BE8'},
-    {id:'u3',name:'Paolo Verdi',username:'paolo',role:'operator',color:'#2EAE6D'},
-  ],
-  clients:[
-    {id:'c1',name:'Acme Corp',active:true,referente:'Giovanni Bianchi'},
-    {id:'c2',name:'Beta Industries',active:true,referente:'Maria Rossi'},
-    {id:'c3',name:'Gamma Tech',active:true,referente:'Luca Verdi'},
-  ],
-  projects:[
-    {id:'p1',clientId:'c1',name:'Restyling Sito Web',code:'001/26',referente:'Paolo Neri',status:'active',budget:5000,budgetHours:120,deadline:'2026-09-30',
-      activities:[{id:'a1',name:'Sviluppo'},{id:'a2',name:'Design'},{id:'a3',name:'Testing'}]},
-    {id:'p2',clientId:'c1',name:'App Mobile',code:'002/26',referente:'Sara Bianchi',status:'active',budget:12000,budgetHours:300,deadline:'2026-12-31',
-      activities:[{id:'a4',name:'Sviluppo'},{id:'a5',name:'Design'},{id:'a6',name:'Testing'},{id:'a7',name:'Deploy'}]},
-    {id:'p3',clientId:'c2',name:'ERP Integration',code:'003/26',referente:'Andrea Verdi',status:'active',budget:8000,budgetHours:200,deadline:'2026-08-15',
-      activities:[{id:'a8',name:'Analisi'},{id:'a9',name:'Sviluppo'},{id:'a10',name:'Testing'}]},
-    {id:'p4',clientId:'c3',name:'Cloud Migration',code:'004/26',referente:'Giulia Rossi',status:'active',budget:15000,budgetHours:400,deadline:'2027-03-31',
-      activities:[{id:'a11',name:'Analisi'},{id:'a12',name:'Sviluppo'},{id:'a13',name:'Deploy'},{id:'a14',name:'Riunione'}]},
-  ],
-  entries:[],
-  rates:[
-    {id:'r1',userId:null,clientId:null,projectId:null,costRate:35,clientRate:75,from:'2025-01-01',to:null},
-  ],
-  nextId:100,
-  nextProjectNum:5
-};
+let db=null,currentUser=null,currentEmail=null,currentView='timesheet',selectedWeek,selectedDay,activeMgmt=null,mgmtProjectFilter={clientId:'',search:''};
 
-let db,currentUser=null,currentView='timesheet',selectedWeek,selectedDay,activeMgmt=null,mgmtProjectFilter={clientId:'',search:''};
+// Flusso invito/recovery: il tipo va letto dall'URL PRIMA che il client
+// Supabase consumi il token dal fragment
+const _authFlowType=new URLSearchParams((location.hash||'').replace(/^#/,'')).get('type');
 
 // ═══ SUPABASE CONFIG ═══
-// ⚠️ SOSTITUISCI CON I TUOI DATI SUPABASE!
+// La anon key è pubblica per progettazione: senza sessione autenticata
+// le policy RLS non le concedono alcun accesso.
 const SUPABASE_URL='https://latuujorgnaksdhxazfb.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y';
-let supa=null;
-try{if(SUPABASE_URL!=='YOUR_SUPABASE_URL_HERE')supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY)}catch(e){console.error(e)}
+const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-let syncTimer=null;
 function updateSyncStatus(status){
   const el=document.getElementById('sync-status');
   if(!el)return;
   const colors={ok:'#2EAE6D',sync:'#E8A33A',err:'#E85A4F',off:'#888'};
-  const labels={ok:'✓ Sincronizzato',sync:'⟳ Sincronizzazione...',err:'✗ Errore sync',off:'○ Offline (locale)'};
+  const labels={ok:'✓ Sincronizzato',sync:'⟳ Sincronizzazione...',err:'✗ Errore sync',off:'○ Offline'};
   el.style.background=colors[status];
   el.innerHTML=labels[status];
 }
-
-function migrateDB(){
-  if(!db)return;
-  if(!db.rates)db.rates=[];
-  // Rimuove campi tariffa obsoleti da users/clients se presenti da versioni precedenti
-  db.users?.forEach(u=>{delete u.hourlyRate});
-  db.clients?.forEach(c=>{delete c.clientRate});
-  db.users?.forEach(u=>{if(u.active===undefined)u.active=true});
-}
-async function loadDB(){
-  // Sempre prima dal localStorage per partenza veloce
-  let hasLocal=false;
-  let hasPendingLocal=false;
-  try{
-    const r=localStorage.getItem(DB_KEY);
-    if(r){db=JSON.parse(r);hasLocal=true;migrateDB()}
-    hasPendingLocal=localStorage.getItem(DB_KEY+'_pending')==='1';
-  }catch(e){}
-  
-  if(supa){
-    updateSyncStatus('sync');
-    try{
-      const {data,error}=await supa.from('timetrack_data').select('data,updated_at').eq('id',1).single();
-      if(error&&error.code==='PGRST116'){
-        // Nessun record nel cloud, crea il default (o usa locale se presente)
-        if(!hasLocal)db=JSON.parse(JSON.stringify(defaultDB));
-        const {data:newData}=await supa.from('timetrack_data').insert({id:1,data:db}).select().single();
-        if(newData)lastUpdate=newData.updated_at;
-        localStorage.setItem(DB_KEY,JSON.stringify(db));
-        localStorage.removeItem(DB_KEY+'_pending');
-      }else if(data&&data.data){
-        // C'è un record nel cloud
-        if(hasPendingLocal&&hasLocal){
-          // Avevamo modifiche locali non sincronizzate!
-          // Controlla se i dati locali sono più recenti
-          const cloudTime=new Date(data.updated_at).getTime();
-          const localTime=parseInt(localStorage.getItem(DB_KEY+'_savedAt')||'0');
-          if(localTime>cloudTime){
-            // Dati locali più recenti: pusha al cloud
-            console.log('Pushing pending local changes to cloud');
-            const {data:upd}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()}).select().single();
-            if(upd)lastUpdate=upd.updated_at;
-            localStorage.removeItem(DB_KEY+'_pending');
-            showToast('Modifiche locali sincronizzate!');
-          }else{
-            // Cloud più recente: prendi cloud (perdiamo modifiche locali)
-            db=data.data;
-            lastUpdate=data.updated_at;
-            migrateDB();
-            localStorage.setItem(DB_KEY,JSON.stringify(db));
-            localStorage.removeItem(DB_KEY+'_pending');
-          }
-        }else{
-          // Caso normale: usa cloud
-          db=data.data;
-          lastUpdate=data.updated_at;
-          migrateDB();
-          localStorage.setItem(DB_KEY,JSON.stringify(db));
-        }
-      }
-      updateSyncStatus('ok');
-      pendingSync=false;
-      startRealtimeSubscription();
-      startPolling();
-    }catch(e){
-      console.error('Errore load Supabase:',e);
-      updateSyncStatus('err');
-      if(!db||!db.users)db=JSON.parse(JSON.stringify(defaultDB));
-      // Se eravamo offline e abbiamo pending, mantieni il flag
-      if(hasPendingLocal)pendingSync=true;
-    }
-  }else{
-    // Fallback: solo localStorage
-    if(!db||!db.users){db=JSON.parse(JSON.stringify(defaultDB));localStorage.setItem(DB_KEY,JSON.stringify(db))}
-    updateSyncStatus('off');
-  }
+// Carica tutte le tabelle e ricompone l'oggetto db con la forma storica
+// (users, clients, projects+activities annidate, entries con costi, rates).
+// Per gli operator le query su rates/project_finance/entry_costs tornano
+// vuote per RLS: budget e costi restano a 0 e la UI già li nasconde.
+async function loadAll(){
+  updateSyncStatus('sync');
+  const [profiles,clients,projects,activities,entries,rates,finance,costs]=await Promise.all([
+    supa.from('profiles').select('*').order('name'),
+    supa.from('clients').select('*').order('name'),
+    supa.from('projects').select('*'),
+    supa.from('activities').select('*'),
+    supa.from('entries').select('*'),
+    supa.from('rates').select('*'),
+    supa.from('project_finance').select('*'),
+    supa.from('entry_costs').select('*'),
+  ]);
+  const bad=[profiles,clients,projects,activities,entries,rates,finance,costs].find(r=>r.error);
+  if(bad){updateSyncStatus('err');throw bad.error}
+  const finMap={};(finance.data||[]).forEach(f=>{finMap[f.project_id]=Number(f.budget)});
+  const actByProj={};(activities.data||[]).forEach(a=>{(actByProj[a.project_id]=actByProj[a.project_id]||[]).push({id:a.id,name:a.name})});
+  const costMap={};(costs.data||[]).forEach(c=>{costMap[c.entry_id]=c});
+  db={
+    users:(profiles.data||[]).map(p=>({id:p.id,name:p.name,username:p.username||'',email:p.email||'',role:p.role,color:p.color,active:p.active})),
+    clients:(clients.data||[]).map(c=>({id:c.id,name:c.name,referente:c.referente||'',email:c.email||'',active:c.active})),
+    projects:(projects.data||[]).map(p=>({id:p.id,clientId:p.client_id,name:p.name,code:p.code||'',referente:p.referente||'',status:p.status,budget:finMap[p.id]||0,budgetHours:p.budget_hours?Number(p.budget_hours):0,deadline:p.deadline||'',activities:actByProj[p.id]||[],assignedUsers:p.assigned_users||[]})),
+    entries:(entries.data||[]).map(e=>{const c=costMap[e.id];return{id:e.id,userId:e.user_id,clientId:e.client_id,projectId:e.project_id,activityId:e.activity_id,date:e.date,hours:Number(e.hours),note:e.note||'',costRate:c?Number(c.cost_rate):0,clientRate:c?Number(c.client_rate):0,createdAt:e.created_at}}),
+    rates:(rates.data||[]).map(r=>({id:r.id,userId:r.user_id,clientId:r.client_id,projectId:r.project_id,costRate:r.cost_rate!=null?Number(r.cost_rate):null,clientRate:r.client_rate!=null?Number(r.client_rate):null,from:r.valid_from,to:r.valid_to})),
+  };
+  updateSyncStatus('ok');
 }
 
-let isSavingLocal=false; // flag per ignorare echo delle nostre modifiche
-let pendingSync=false; // true se ci sono modifiche non ancora confermate dal cloud
-function saveDB(){
-  // Salva sempre subito in localStorage per velocità
-  localStorage.setItem(DB_KEY,JSON.stringify(db));
-  localStorage.setItem(DB_KEY+'_savedAt',Date.now().toString());
-  // Marca che ci sono dati pending
-  localStorage.setItem(DB_KEY+'_pending','1');
-  pendingSync=true;
-  
-  if(supa){
-    // Debounce: aspetta 600ms prima di sincronizzare
-    if(syncTimer)clearTimeout(syncTimer);
-    updateSyncStatus('sync');
-    syncTimer=setTimeout(async()=>{
-      try{
-        isSavingLocal=true;
-        const {data,error}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()}).select().single();
-        if(error)throw error;
-        if(data)lastUpdate=data.updated_at;
-        // Sync confermato: rimuovi flag pending
-        localStorage.removeItem(DB_KEY+'_pending');
-        pendingSync=false;
-        updateSyncStatus('ok');
-        setTimeout(()=>{isSavingLocal=false},800);
-      }catch(e){
-        console.error('Errore save Supabase:',e);
-        updateSyncStatus('err');
-        isSavingLocal=false;
-        // pendingSync resta true: ritenteremo
-      }
-    },600);
-  }
+function friendlyDbError(error){
+  const m=error?.message||'';
+  if(m.includes('row-level security')||m.includes('Campo protetto')||m.includes('riservata agli amministratori'))return'Permesso negato';
+  if(m.includes('duplicate key'))return'Elemento già esistente';
+  if(m.includes('violates check constraint'))return'Valore non valido';
+  if(m.includes('Failed to fetch')||m.includes('NetworkError'))return'Connessione assente, riprova';
+  return'Errore di salvataggio';
 }
 
-// Sync immediato (senza debounce) - per chiusura pagina o recupero dati
-async function syncNow(){
-  if(!supa||!pendingSync)return;
-  if(syncTimer){clearTimeout(syncTimer);syncTimer=null}
-  try{
-    const {data,error}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()}).select().single();
-    if(error)throw error;
-    if(data)lastUpdate=data.updated_at;
-    localStorage.removeItem(DB_KEY+'_pending');
-    pendingSync=false;
-    updateSyncStatus('ok');
-  }catch(e){
-    console.error('Errore syncNow:',e);
+// Esegue una scrittura Supabase; su successo ricarica i dati.
+// Ritorna true/false: su false la UI non deve applicare nulla.
+async function dbWrite(query,okMsg){
+  updateSyncStatus('sync');
+  const {error}=await query;
+  if(error){
+    console.error('Errore scrittura:',error);
     updateSyncStatus('err');
+    showToast(friendlyDbError(error),'error');
+    return false;
   }
+  try{await loadAll()}catch(e){console.error(e)}
+  if(okMsg)showToast(okMsg);
+  return true;
 }
-
-// Avviso prima di chiudere se ci sono modifiche non sincronizzate
-window.addEventListener('beforeunload',e=>{
-  if(pendingSync){
-    // Tenta sync immediato (best effort, asincrono)
-    syncNow();
-    e.preventDefault();
-    e.returnValue='Ci sono modifiche non ancora salvate sul cloud. Sicuro di voler chiudere?';
-    return e.returnValue;
-  }
-});
-
-// Quando torna online, sincronizza
-window.addEventListener('online',()=>{
-  if(pendingSync){
-    showToast('Connessione tornata, sincronizzo...');
-    syncNow();
-  }
-});
 
 // Re-render della view corrente
 function rerenderCurrent(){
@@ -209,52 +92,33 @@ function rerenderCurrent(){
   ({timesheet:renderWeek,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[currentView]?.();
 }
 
-// Applica nuovi dati ricevuti dal cloud
-function applyRemoteData(newData,newUpdate){
-  if(isSavingLocal)return; // ignora echo delle nostre modifiche
-  if(lastUpdate===newUpdate)return; // stesso aggiornamento già processato
-  db=newData;
-  lastUpdate=newUpdate;
-  localStorage.setItem(DB_KEY,JSON.stringify(db));
-  rerenderCurrent();
-  // Mostra notifica discreta
-  const el=document.getElementById('sync-status');
-  if(el){
-    el.style.background='#3A7BE8';
-    el.innerHTML='↓ Aggiornato da altri';
-    setTimeout(()=>{updateSyncStatus('ok')},1800);
-  }
+// Sottoscrizione realtime per tabella: su ogni cambiamento ricarica
+// e ri-renderizza (RLS filtra gli eventi per utente lato server)
+let realtimeChannel=null,rtRefreshTimer=null;
+function scheduleRemoteRefresh(){
+  if(rtRefreshTimer)clearTimeout(rtRefreshTimer);
+  rtRefreshTimer=setTimeout(async()=>{
+    if(!currentUser)return;
+    try{await loadAll();rerenderCurrent()}catch(e){console.error(e)}
+  },400);
 }
-
-// Sottoscrizione realtime (WebSocket - istantaneo)
-let realtimeChannel=null;
 function startRealtimeSubscription(){
-  if(!supa)return;
-  if(realtimeChannel){supa.removeChannel(realtimeChannel)}
-  realtimeChannel=supa.channel('timetrack_changes')
-    .on('postgres_changes',{event:'*',schema:'public',table:'timetrack_data'},payload=>{
-      if(payload.new&&payload.new.data&&payload.new.updated_at){
-        applyRemoteData(payload.new.data,payload.new.updated_at);
-      }
-    })
-    .subscribe();
+  if(realtimeChannel)supa.removeChannel(realtimeChannel);
+  realtimeChannel=supa.channel('timetrack_changes');
+  ['profiles','clients','projects','activities','entries','rates','project_finance','entry_costs'].forEach(t=>{
+    realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:t},scheduleRemoteRefresh);
+  });
+  realtimeChannel.subscribe();
 }
 
-// Polling come fallback (ogni 3 secondi)
+// Polling di sicurezza (60s): copre eventuali eventi realtime persi
 let pollTimer=null;
-let lastUpdate=null;
 function startPolling(){
   if(pollTimer)clearInterval(pollTimer);
   pollTimer=setInterval(async()=>{
-    if(!supa||isSavingLocal)return;
-    try{
-      const {data,error}=await supa.from('timetrack_data').select('updated_at,data').eq('id',1).single();
-      if(error||!data)return;
-      if(data.updated_at!==lastUpdate){
-        applyRemoteData(data.data,data.updated_at);
-      }
-    }catch(e){console.error('Polling err:',e)}
-  },3000);
+    if(!currentUser)return;
+    try{await loadAll();rerenderCurrent()}catch(e){console.error('Refresh err:',e)}
+  },60000);
 }
 function localYMD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function parseYMD(s){const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd)}
@@ -266,22 +130,16 @@ const DN=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
 function showToast(m,t='success'){const el=document.getElementById('toast');el.textContent=m;el.style.background=t==='error'?'var(--red)':'var(--green)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2500)}
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function _a(){return currentUser&&currentUser.role==='admin'}
+// Valida i colori prima di interpolarli in HTML/style (difesa XSS)
+function safeColor(c){return /^#[0-9A-Fa-f]{6}$/.test(c||'')?c:'#888888'}
 function isProjectVisible(proj){if(_a())return true;const au=proj.assignedUsers;if(!au||au.length===0)return true;return au.includes(currentUser.id)}
-function gid(){return'id'+(db.nextId++)}
+function gid(){return crypto.randomUUID()}
 function openModal(h){document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${h}</div></div>`}
 function closeModal(){document.getElementById('modal-root').innerHTML=''}
 
-// ═══ LOGIN ═══
-// ═══ AUTH (password hashing) ═══
-async function hashPassword(pwd){
-  const enc=new TextEncoder().encode(pwd+'_timetrack_salt_2026');
-  const buf=await crypto.subtle.digest('SHA-256',enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-let pendingLoginUserId=null;
+// ═══ AUTH (Supabase Auth: email + password verificate lato server) ═══
 function renderLogin(){
-  const saved=localStorage.getItem('tt_saved_username');
+  const saved=localStorage.getItem('tt_saved_email');
   if(saved){
     const el=document.getElementById('login-username');
     if(el)el.value=saved;
@@ -292,102 +150,61 @@ function renderLogin(){
     setTimeout(()=>document.getElementById('login-username')?.focus(),50);
   }
 }
+
+function _loginError(msg){
+  const errEl=document.getElementById('login-error');
+  errEl.textContent=msg;errEl.style.display='block';
+}
+
 async function submitLogin(){
-  const username=document.getElementById('login-username').value.trim();
+  const email=document.getElementById('login-username').value.trim();
   const password=document.getElementById('login-password').value;
   const errEl=document.getElementById('login-error');
   errEl.style.display='none';
-  if(!db||!db.users){errEl.textContent='Dati non ancora caricati, riprova tra un momento';errEl.style.display='block';return;}
-  if(!username){errEl.textContent='Inserisci username';errEl.style.display='block';return;}
-  const user=db.users.find(u=>(u.username||u.name).toLowerCase()===username.toLowerCase());
-  if(!user){errEl.textContent='Utente non trovato';errEl.style.display='block';return;}
-  if(user.active===false){errEl.textContent='Account sospeso. Contatta un amministratore.';errEl.style.display='block';return;}
-  if(!user.passwordHash){
-    showPasswordModal(user.id,'create');
-    return;
-  }
-  if(!password){errEl.textContent='Inserisci la password';errEl.style.display='block';return;}
-  const hash=await hashPassword(password);
-  if(hash!==user.passwordHash){
-    errEl.textContent='Password errata';
-    errEl.style.display='block';
+  if(!email){_loginError('Inserisci la tua email');return}
+  if(!password){_loginError('Inserisci la password');return}
+  const btn=document.querySelector('#login-form .btn-primary');
+  if(btn)btn.disabled=true;
+  const {error}=await supa.auth.signInWithPassword({email,password});
+  if(btn)btn.disabled=false;
+  if(error){
+    console.error('Login fallito:',error.message);
+    _loginError(error.message.includes('Invalid login credentials')?'Email o password errati':'Accesso non riuscito, riprova');
     document.getElementById('login-password').value='';
     document.getElementById('login-password').focus();
     return;
   }
   const remember=document.getElementById('login-remember')?.checked;
-  if(remember)localStorage.setItem('tt_saved_username',username);
-  else localStorage.removeItem('tt_saved_username');
-  doLogin(user);
+  if(remember)localStorage.setItem('tt_saved_email',email);
+  else localStorage.removeItem('tt_saved_email');
+  const ok=await initSession();
+  if(!ok)return;
+  document.getElementById('login-password').value='';
 }
 
-function showPasswordModal(uid,mode){
-  pendingLoginUserId=uid;
-  const user=db.users.find(u=>u.id===uid);
-  const isCreate=mode==='create';
-  const title=isCreate?`Imposta password per ${esc(user.username||user.name)}`:`Accesso: ${esc(user.username||user.name)}`;
-  const subtitle=isCreate?'Prima volta? Crea la tua password personale (verrà richiesta nei prossimi accessi)':'Inserisci la tua password';
-  const html=`<div class="modal-backdrop" onclick="if(event.target===this)closePwdModal()"><div class="modal" style="max-width:400px">
-    <h3 style="margin:0 0 8px;color:var(--accent)">${title}</h3>
-    <p style="margin:0 0 20px;color:var(--text-dim);font-size:13px">${subtitle}</p>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <input type="password" id="pwd-input" placeholder="Password" autocomplete="${isCreate?'new-password':'current-password'}" onkeydown="if(event.key==='Enter')submitPwd()" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
-      ${isCreate?'<input type="password" id="pwd-confirm" placeholder="Conferma password" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')submitPwd()" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">':''}
-      <div id="pwd-error" style="color:var(--red);font-size:13px;display:none"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button class="btn-ghost" onclick="closePwdModal()">Annulla</button>
-        <button class="btn-primary" onclick="submitPwd()">${isCreate?'Crea password':'Accedi'}</button>
-      </div>
-    </div>
-  </div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
-  setTimeout(()=>document.getElementById('pwd-input')?.focus(),50);
-}
-
-function closePwdModal(){
-  document.querySelector('.modal-backdrop')?.remove();
-  pendingLoginUserId=null;
-}
-
-async function submitPwd(){
-  const user=db.users.find(u=>u.id===pendingLoginUserId);
-  if(!user)return;
-  if(user.active===false){const e=document.getElementById('pwd-error');e.textContent='Account sospeso.';e.style.display='block';return}
-  const pwdInput=document.getElementById('pwd-input');
-  const pwd=pwdInput.value;
-  const errEl=document.getElementById('pwd-error');
-  
-  if(!pwd||pwd.length<4){
-    errEl.textContent='Password troppo corta (min 4 caratteri)';
-    errEl.style.display='block';
-    return;
+// Carica i dati e apre l'app se la sessione è valida e il profilo attivo
+async function initSession(){
+  const {data:{session}}=await supa.auth.getSession();
+  if(!session)return false;
+  try{await loadAll()}catch(e){
+    console.error('Errore caricamento dati:',e);
+    _loginError('Impossibile caricare i dati, riprova');
+    return false;
   }
-  
-  if(!user.passwordHash){
-    // Modalità creazione password
-    const confirm=document.getElementById('pwd-confirm').value;
-    if(pwd!==confirm){
-      errEl.textContent='Le password non coincidono';
-      errEl.style.display='block';
-      return;
-    }
-    user.passwordHash=await hashPassword(pwd);
-    saveDB();
-    closePwdModal();
-    doLogin(user);
-  }else{
-    // Modalità accesso
-    const hash=await hashPassword(pwd);
-    if(hash!==user.passwordHash){
-      errEl.textContent='Password errata';
-      errEl.style.display='block';
-      pwdInput.value='';
-      pwdInput.focus();
-      return;
-    }
-    closePwdModal();
-    doLogin(user);
+  const me=db.users.find(u=>u.id===session.user.id);
+  if(!me){
+    await supa.auth.signOut();
+    _loginError('Profilo non trovato. Contatta un amministratore.');
+    return false;
   }
+  if(me.active===false){
+    await supa.auth.signOut();
+    _loginError('Account sospeso. Contatta un amministratore.');
+    return false;
+  }
+  currentEmail=session.user.email;
+  doLogin(me);
+  return true;
 }
 
 function doLogin(user){
@@ -395,11 +212,16 @@ function doLogin(user){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-header').style.display='flex';
   document.getElementById('app-main').style.display='block';
+  startRealtimeSubscription();
+  startPolling();
   renderHeader();setView('timesheet');
 }
 
-function logout(){
-  currentUser=null;
+async function logout(){
+  try{await supa.auth.signOut()}catch(e){console.error(e)}
+  if(realtimeChannel){supa.removeChannel(realtimeChannel);realtimeChannel=null}
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null}
+  currentUser=null;currentEmail=null;db=null;
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-header').style.display='none';
   document.getElementById('app-main').style.display='none';
@@ -409,6 +231,10 @@ function logout(){
   renderLogin();
 }
 
+function closePwdModal(){
+  document.querySelector('.modal-backdrop')?.remove();
+}
+
 // Cambio password (richiamabile dall'header)
 function changePassword(){
   if(!currentUser)return;
@@ -416,7 +242,7 @@ function changePassword(){
     <h3 style="margin:0 0 20px;color:var(--accent)">Cambia password</h3>
     <div style="display:flex;flex-direction:column;gap:12px">
       <input type="password" id="cp-old" placeholder="Password attuale" autocomplete="current-password" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
-      <input type="password" id="cp-new" placeholder="Nuova password" autocomplete="new-password" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
+      <input type="password" id="cp-new" placeholder="Nuova password (min 8 caratteri)" autocomplete="new-password" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
       <input type="password" id="cp-confirm" placeholder="Conferma nuova password" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitChangePwd()" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
       <div id="cp-error" style="color:var(--red);font-size:13px;display:none"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
@@ -434,44 +260,78 @@ async function submitChangePwd(){
   const newPwd=document.getElementById('cp-new').value;
   const conf=document.getElementById('cp-confirm').value;
   const err=document.getElementById('cp-error');
-  
-  const oldHash=await hashPassword(oldPwd);
-  if(oldHash!==currentUser.passwordHash){
-    err.textContent='Password attuale errata';err.style.display='block';return;
-  }
-  if(newPwd.length<4){
-    err.textContent='Nuova password troppo corta (min 4 caratteri)';err.style.display='block';return;
+  if(newPwd.length<8){
+    err.textContent='Nuova password troppo corta (min 8 caratteri)';err.style.display='block';return;
   }
   if(newPwd!==conf){
     err.textContent='Le password non coincidono';err.style.display='block';return;
   }
-  
-  currentUser.passwordHash=await hashPassword(newPwd);
-  // Aggiorna anche nel db
-  const u=db.users.find(x=>x.id===currentUser.id);
-  if(u)u.passwordHash=currentUser.passwordHash;
-  saveDB();
+  // Verifica la password attuale rifacendo il login
+  const {error:oldErr}=await supa.auth.signInWithPassword({email:currentEmail,password:oldPwd});
+  if(oldErr){
+    err.textContent='Password attuale errata';err.style.display='block';return;
+  }
+  const {error}=await supa.auth.updateUser({password:newPwd});
+  if(error){
+    console.error(error);
+    err.textContent='Cambio password non riuscito, riprova';err.style.display='block';return;
+  }
   closePwdModal();
   showToast('Password cambiata!');
 }
 
-// Reset password (solo admin)
+// ═══ IMPOSTA PASSWORD (arrivo da link di invito o di recovery) ═══
+function showSetPasswordModal(){
+  if(document.getElementById('sp-new'))return;
+  const html=`<div class="modal-backdrop"><div class="modal" style="max-width:400px">
+    <h3 style="margin:0 0 8px;color:var(--accent)">Imposta la tua password</h3>
+    <p style="margin:0 0 20px;color:var(--text-dim);font-size:13px">Scegli la password che userai per accedere a TimeTrack</p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <input type="password" id="sp-new" placeholder="Nuova password (min 8 caratteri)" autocomplete="new-password" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
+      <input type="password" id="sp-confirm" placeholder="Conferma password" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitSetPwd()" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
+      <div id="sp-error" style="color:var(--red);font-size:13px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn-primary" onclick="submitSetPwd()">Salva password</button>
+      </div>
+    </div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('sp-new')?.focus(),50);
+}
+
+async function submitSetPwd(){
+  const pwd=document.getElementById('sp-new').value;
+  const conf=document.getElementById('sp-confirm').value;
+  const err=document.getElementById('sp-error');
+  if(pwd.length<8){err.textContent='Password troppo corta (min 8 caratteri)';err.style.display='block';return}
+  if(pwd!==conf){err.textContent='Le password non coincidono';err.style.display='block';return}
+  const {error}=await supa.auth.updateUser({password:pwd});
+  if(error){
+    console.error(error);
+    err.textContent='Salvataggio non riuscito, riprova';err.style.display='block';return;
+  }
+  closePwdModal();
+  showToast('Password impostata!');
+  await initSession();
+}
+
+// Reset password (solo admin): invia la mail di recovery
 async function resetUserPassword(uid){
   if(!_a())return;
-  if(!confirm('Resettare la password di questo utente? Dovrà crearne una nuova al prossimo accesso.'))return;
   const u=db.users.find(x=>x.id===uid);
   if(!u)return;
-  delete u.passwordHash;
-  saveDB();
-  renderManage();
-  showToast('Password resettata');
+  if(!u.email||!u.email.includes('@')){showToast('Utente senza email','error');return}
+  if(!confirm(`Inviare a ${u.email} l'email per reimpostare la password?`))return;
+  const {error}=await supa.auth.resetPasswordForEmail(u.email,{redirectTo:location.origin+location.pathname});
+  if(error){console.error(error);showToast('Invio non riuscito','error');return}
+  showToast('Email di reset inviata');
 }
 
 // ═══ HEADER ═══
 function renderHeader(){
   const pill=document.getElementById('user-pill');
-  pill.style.borderColor=currentUser.color;
-  pill.innerHTML=`<span class="user-dot" style="background:${currentUser.color}"></span>${esc(currentUser.name.split(' ')[0])}`;
+  pill.style.borderColor=safeColor(currentUser.color);
+  pill.innerHTML=`<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}`;
   const tabs=[{id:'timesheet',label:'Ore',icon:'📅'},{id:'dashboard',label:'Report',icon:'📊'},{id:'projects',label:'Commesse',icon:'📋'}];
   if(_a())tabs.push({id:'manage',label:'Gestione',icon:'⚙'});
   document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
@@ -523,29 +383,9 @@ function selectProject(id,label){
   document.getElementById('qe-project-dropdown').style.display='none';
   onQeProjectChange3();
 }
-function resolveRate(userId,clientId,projectId,date){
-  const rates=db.rates||[];
-  const active=rates.filter(r=>r.from<=date&&(r.to===null||r.to>=date));
-  const priority=[
-    r=>r.userId===userId&&r.projectId===projectId&&r.clientId===null,
-    r=>r.userId===userId&&r.clientId===clientId&&r.projectId===null,
-    r=>r.userId===null&&r.projectId===projectId&&r.clientId===null,
-    r=>r.userId===userId&&r.clientId===null&&r.projectId===null,
-    r=>r.userId===null&&r.clientId===clientId&&r.projectId===null,
-    r=>r.userId===null&&r.clientId===null&&r.projectId===null,
-  ];
-  let costRate=0,clientRate=0,costFound=false,clientFound=false;
-  for(const match of priority){
-    const candidates=active.filter(match).sort((a,b)=>b.from.localeCompare(a.from));
-    for(const c of candidates){
-      if(!costFound&&c.costRate!=null){costRate=c.costRate;costFound=true}
-      if(!clientFound&&c.clientRate!=null){clientRate=c.clientRate;clientFound=true}
-    }
-    if(costFound&&clientFound)break;
-  }
-  return{costRate,clientRate};
-}
-function addEntry(){
+// La risoluzione tariffe avviene lato server (funzione SQL resolve_rates
+// + trigger snapshot_entry_rates): il client non conosce mai le tariffe.
+async function addEntry(){
   const projectId=document.getElementById('qe-project').value;
   const activityId=document.getElementById('qe-activity').value;
   const date=document.getElementById('qe-date').value;
@@ -555,15 +395,15 @@ function addEntry(){
   if(isNaN(hours)||hours<=0||hours>24){showToast('Ore non valide','error');return}
   const proj=db.projects.find(p=>p.id===projectId);
   if(!proj){showToast('Commessa non valida','error');return}
-  const r=resolveRate(currentUser.id,proj.clientId,projectId,date);
-  db.entries.push({id:gid(),userId:currentUser.id,clientId:proj.clientId,projectId,activityId,date,hours,note:note||'',costRate:r.costRate,clientRate:r.clientRate,createdAt:new Date().toISOString()});
-  saveDB();
+  // Le tariffe vengono snapshotate lato server dal trigger (gli operator non le vedono mai)
+  const ok=await dbWrite(supa.from('entries').insert({id:gid(),user_id:currentUser.id,client_id:proj.clientId,project_id:projectId,activity_id:activityId,date,hours,note:note||''}),`${hours}h registrate!`);
+  if(!ok)return;
   document.getElementById('qe-project-search').value='';
   document.getElementById('qe-project').value='';
   onQeProjectChange3();
   document.getElementById('qe-hours').value='';
   document.getElementById('qe-note').value='';
-  showToast(`${hours}h registrate!`);renderQH();renderWeek();
+  renderQH();renderWeek();
 }
 
 // ═══ WEEK ═══
@@ -583,7 +423,7 @@ function renderWeek(){
 }
 function renderCard(e){
   const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId),can=_a()||e.userId===currentUser.id,showU=_a()&&e.userId!==currentUser.id;
-  return`<div class="entry-card" style="border-left-color:${usr?.color||'#888'}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">✏</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">🗑</button></div>`:''}</div>`;
+  return`<div class="entry-card" style="border-left-color:${safeColor(usr?.color)}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">✏</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">🗑</button></div>`:''}</div>`;
 }
 
 // Add global event delegation for all buttons with data-action
@@ -608,7 +448,6 @@ document.addEventListener('click', function(event) {
     case 'set-status-suspended': setProjectStatus(id,'suspended'); break;
     case 'delete-activity': delAct(pid, aid); break;
     case 'edit-activity': editActModal(pid, aid); break;
-    case 'delete-user': delUser(id); break;
     case 'reset-pwd': resetUserPassword(id); break;
     case 'edit-user': editUserModal(id); break;
     case 'toggle-user-active': toggleUserActive(id); break;
@@ -648,20 +487,27 @@ function onEditProjectChange(){
   const acts=proj?.activities||[];
   as.innerHTML=acts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
 }
-function saveEntryEdit(id){
+async function saveEntryEdit(id){
   const e=db.entries.find(x=>x.id===id);if(!e)return;
   const h=parseFloat(document.getElementById('me-hours').value);
   if(isNaN(h)||h<=0||h>24){showToast('Ore non valide','error');return}
-  e.clientId=document.getElementById('me-client').value;
-  e.projectId=document.getElementById('me-project').value;
-  e.activityId=document.getElementById('me-activity').value;
-  e.date=document.getElementById('me-date').value;
-  e.hours=h;e.note=document.getElementById('me-note').value;
-  const r=resolveRate(e.userId,e.clientId,e.projectId,e.date);
-  e.costRate=r.costRate;e.clientRate=r.clientRate;
-  saveDB();closeModal();showToast('Aggiornata');renderWeek();
+  const upd={
+    client_id:document.getElementById('me-client').value,
+    project_id:document.getElementById('me-project').value,
+    activity_id:document.getElementById('me-activity').value||null,
+    date:document.getElementById('me-date').value,
+    hours:h,
+    note:document.getElementById('me-note').value
+  };
+  closeModal();
+  const ok=await dbWrite(supa.from('entries').update(upd).eq('id',id),'Aggiornata');
+  if(ok)renderWeek();
 }
-function delEntry(id){if(!confirm('Eliminare questa registrazione?'))return;db.entries=db.entries.filter(e=>e.id!==id);saveDB();showToast('Rimossa');renderWeek()}
+async function delEntry(id){
+  if(!confirm('Eliminare questa registrazione?'))return;
+  const ok=await dbWrite(supa.from('entries').delete().eq('id',id),'Rimossa');
+  if(ok)renderWeek();
+}
 
 // ═══ DASHBOARD ═══
 // ═══ DASHBOARD FILTERS ═══
@@ -796,7 +642,7 @@ function renderDashboard(){
   renderProjectBreakdown(ents);
 
   const all=ents.slice(-100).reverse();
-  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}</td>${_a()?`<td><span class="user-tag" style="background:${usr?.color}22;color:${usr?.color}">${esc(usr?.name?.split(' ')[0])}</span></td>`:''}<td>${esc(cl?.name||'?')}</td><td>${esc(pr?.name||'?')}</td><td>${esc(ac?.name||'?')}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
+  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}</td>${_a()?`<td><span class="user-tag" style="background:${safeColor(usr?.color)}22;color:${safeColor(usr?.color)}">${esc(usr?.name?.split(' ')[0])}</span></td>`:''}<td>${esc(cl?.name||'?')}</td><td>${esc(pr?.name||'?')}</td><td>${esc(ac?.name||'?')}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
 }
 
 function renderProjectBreakdown(entries){
@@ -866,320 +712,19 @@ function polarToCartesian(cx,cy,r,deg){
   const rad=deg*Math.PI/180;
   return{x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)};
 }
-// ═══ BACKUP SYSTEM ═══
-const BACKUP_KEY='timetrack_backups';
-const MAX_BACKUPS=7;
-
-// Backup automatico giornaliero
-function initAutoBackup(){
-  const lastBackup=localStorage.getItem('timetrack_last_backup');
-  const today=todayStr();
-  if(lastBackup!==today){
-    createAutoBackup();
-    localStorage.setItem('timetrack_last_backup',today);
-  }
-  // Schedule prossimo backup a mezzanotte
-  const now=new Date();
-  const tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,1);
-  const msUntilMidnight=tomorrow-now;
-  setTimeout(()=>{createAutoBackup();setInterval(createAutoBackup,24*60*60*1000)},msUntilMidnight);
-}
-
-function createAutoBackup(){
-  const backups=getBackups();
-  const backup={
-    date:new Date().toISOString(),
-    data:JSON.parse(JSON.stringify(db)),
-    entries:db.entries.length,
-    users:db.users.length,
-    projects:db.projects.length,
-    auto:true
-  };
-  backups.unshift(backup);
-  if(backups.length>MAX_BACKUPS)backups.splice(MAX_BACKUPS);
-  localStorage.setItem(BACKUP_KEY,JSON.stringify(backups));
-}
-
-function createManualBackup(){
-  const backups=getBackups();
-  const backup={
-    date:new Date().toISOString(),
-    data:JSON.parse(JSON.stringify(db)),
-    entries:db.entries.length,
-    users:db.users.length,
-    projects:db.projects.length,
-    auto:false
-  };
-  backups.unshift(backup);
-  if(backups.length>MAX_BACKUPS)backups.splice(MAX_BACKUPS);
-  localStorage.setItem(BACKUP_KEY,JSON.stringify(backups));
-  showToast('💾 Backup creato!');
-  renderBackupTab();
-}
-
-function getBackups(){
-  try{
-    const b=localStorage.getItem(BACKUP_KEY);
-    return b?JSON.parse(b):[];
-  }catch(e){return[]}
-}
-
+// ═══ BACKUP (solo export: i backup veri sono quelli automatici di Supabase) ═══
 function renderBackupTab(){
   const el=document.getElementById('mgmt-content');
-  const backups=getBackups();
-  const now=Date.now();
-  
   el.innerHTML=`<div class="mgmt-panel" style="max-width:800px">
-    <h3 style="margin:0 0 12px;color:var(--accent)">💾 Backup e Ripristino</h3>
-    <p style="color:var(--text-dim);font-size:14px;margin:0 0 24px">Backup automatici giornalieri + possibilità di backup manuali. Massimo ${MAX_BACKUPS} backup salvati.</p>
-    
-    <div style="display:flex;gap:12px;margin-bottom:32px;flex-wrap:wrap">
-      <button class="add-btn-sm" onclick="createManualBackup()">💾 Crea backup ora</button>
+    <h3 style="margin:0 0 12px;color:var(--accent)">💾 Backup</h3>
+    <p style="color:var(--text-dim);font-size:14px;margin:0 0 16px">
+      I dati sono protetti dai <b>backup automatici di Supabase</b> (Dashboard → Database → Backups).
+      Da qui puoi scaricare un export JSON dei dati visibili al tuo account, da conservare come copia periodica.
+    </p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
       <button class="add-btn-sm" onclick="exportJSON()">⬇ Esporta JSON</button>
-      <label style="cursor:pointer">
-        <input type="file" accept=".json" onchange="importBackupFile(event)" style="display:none">
-        <span class="add-btn-sm" style="display:inline-block">📁 Importa da file</span>
-      </label>
-      <button class="add-btn-sm" onclick="showResetModal()" style="background:var(--red);border-color:var(--red)">🔴 Reset completo</button>
     </div>
-
-    ${backups.length===0?`<p class="empty-text">Nessun backup disponibile</p>`:`
-      <div style="display:flex;flex-direction:column;gap:12px">
-        ${backups.map((b,i)=>{
-          const d=new Date(b.date);
-          const age=Math.floor((now-d.getTime())/(1000*60*60*24));
-          const ageStr=age===0?'Oggi':age===1?'Ieri':`${age} giorni fa`;
-          const size=JSON.stringify(b.data).length;
-          const sizeKB=(size/1024).toFixed(1);
-          return`<div class="mgmt-item" style="padding:16px;cursor:pointer;transition:all .2s" onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='transparent'">
-            <div style="flex:1">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                <span style="font-weight:600;font-size:15px">${b.auto?'🤖 Auto':'👤 Manuale'} - ${d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'})} ${d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</span>
-                <span style="background:var(--border);padding:3px 8px;border-radius:12px;font-size:12px;color:var(--text-dim)">${ageStr}</span>
-              </div>
-              <div style="display:flex;gap:16px;font-size:13px;color:var(--text-dim)">
-                <span>📊 ${b.entries} ore registrate</span>
-                <span>👥 ${b.users} utenti</span>
-                <span>📁 ${b.projects} commesse</span>
-                <span>💾 ${sizeKB} KB</span>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px">
-              <button class="mini-btn" onclick="event.stopPropagation();restoreBackup(${i})" title="Ripristina">↩️</button>
-              <button class="mini-btn" onclick="event.stopPropagation();downloadBackup(${i})" title="Scarica">⬇</button>
-              <button class="mini-btn danger" onclick="event.stopPropagation();deleteBackup(${i})" title="Elimina">🗑</button>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-    `}
   </div>`;
-}
-
-async function restoreBackup(index){
-  const backups=getBackups();
-  if(!backups[index])return;
-  const b=backups[index];
-  const d=new Date(b.date).toLocaleString('it-IT');
-  if(!confirm(`⚠️ ATTENZIONE!\n\nRipristinare il backup del ${d}?\n\nTutti i dati attuali saranno sostituiti con quelli del backup.\n\nQuesta operazione NON può essere annullata!`))return;
-  
-  db=JSON.parse(JSON.stringify(b.data));
-  localStorage.setItem(DB_KEY,JSON.stringify(db));
-  
-  // Sync al cloud se configurato
-  if(supa){
-    updateSyncStatus('sync');
-    try{
-      const {error}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()});
-      if(error)throw error;
-      updateSyncStatus('ok');
-    }catch(e){
-      console.error('Errore sync dopo restore:',e);
-      updateSyncStatus('err');
-    }
-  }
-  
-  showToast('✅ Backup ripristinato!');
-  setTimeout(()=>location.reload(),1000);
-}
-
-function downloadBackup(index){
-  const backups=getBackups();
-  if(!backups[index])return;
-  const b=backups[index];
-  const d=new Date(b.date);
-  const fname=`timetrack_backup_${localYMD(d)}_${d.getHours()}${d.getMinutes()}.json`;
-  const blob=new Blob([JSON.stringify(b.data,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download=fname;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('💾 Backup scaricato');
-}
-
-function deleteBackup(index){
-  if(!confirm('Eliminare questo backup?'))return;
-  const backups=getBackups();
-  backups.splice(index,1);
-  localStorage.setItem(BACKUP_KEY,JSON.stringify(backups));
-  showToast('Backup eliminato');
-  renderBackupTab();
-}
-
-async function importBackupFile(event){
-  const file=event.target.files[0];
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=async(e)=>{
-    try{
-      const imported=JSON.parse(e.target.result);
-      if(!imported.users||!imported.entries){
-        showToast('File non valido','error');return;
-      }
-      if(!confirm(`⚠️ Importare i dati dal file "${file.name}"?\n\nI dati attuali saranno sostituiti.\n\nQuesta operazione NON può essere annullata!`))return;
-      
-      db=imported;
-      localStorage.setItem(DB_KEY,JSON.stringify(db));
-      
-      // Sync al cloud
-      if(supa){
-        updateSyncStatus('sync');
-        try{
-          const {error}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()});
-          if(error)throw error;
-          updateSyncStatus('ok');
-        }catch(e){
-          console.error('Errore sync dopo import:',e);
-          updateSyncStatus('err');
-        }
-      }
-      
-      showToast('✅ Dati importati!');
-      setTimeout(()=>location.reload(),1000);
-    }catch(e){
-      console.error('Errore import:',e);
-      showToast('Errore lettura file','error');
-    }
-  };
-  reader.readAsText(file);
-  event.target.value='';
-}
-
-// ═══ RESET DATABASE ═══
-function showResetModal(){
-  const adminUsers=db.users.filter(u=>u.role==='admin');
-  if(adminUsers.length===0){
-    showToast('Nessun admin disponibile','error');
-    return;
-  }
-  
-  const html=`<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:500px">
-    <h3 style="margin:0 0 12px;color:var(--red)">🔴 Reset Completo Database</h3>
-    <p style="color:var(--text-dim);font-size:14px;margin:0 0 20px">Questa operazione cancellerà TUTTI i dati (clienti, commesse, ore registrate) e manterrà solo un utente admin che scegli tu.</p>
-    
-    <div style="background:rgba(232,90,79,.1);border:1px solid var(--red);border-radius:8px;padding:16px;margin-bottom:20px">
-      <div style="font-weight:700;color:var(--red);margin-bottom:8px">⚠️ ATTENZIONE</div>
-      <ul style="margin:0;padding-left:20px;font-size:13px;color:var(--text-dim)">
-        <li>Tutti i clienti saranno eliminati</li>
-        <li>Tutte le commesse saranno eliminate</li>
-        <li>Tutte le ore registrate saranno eliminate</li>
-        <li>Tutti gli utenti tranne quello selezionato saranno eliminati</li>
-        <li>Tutti i backup locali saranno eliminati</li>
-      </ul>
-    </div>
-    
-    <div class="modal-field">
-      <label style="font-weight:600">Seleziona l'admin da mantenere:</label>
-      <select id="reset-admin-select" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
-        ${adminUsers.map(u=>`<option value="${u.id}">${esc(u.name)} (@${esc(u.username||u.name)})</option>`).join('')}
-      </select>
-    </div>
-    
-    <div style="margin:20px 0;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="reset-confirm-check" style="width:18px;height:18px">
-        <span style="font-size:14px">Confermo di voler procedere con il reset completo</span>
-      </label>
-    </div>
-    
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="executeReset()" style="background:var(--red);border-color:var(--red)">🔴 Reset Database</button>
-    </div>
-  </div></div>`;
-  
-  document.body.insertAdjacentHTML('beforeend',html);
-}
-
-async function executeReset(){
-  const adminId=document.getElementById('reset-admin-select').value;
-  const confirmed=document.getElementById('reset-confirm-check').checked;
-  
-  if(!confirmed){
-    showToast('Devi confermare per procedere','error');
-    return;
-  }
-  
-  if(!confirm('⚠️ ULTIMA CONFERMA\n\nSei ASSOLUTAMENTE SICURO di voler cancellare tutto?\n\nQuesta operazione è IRREVERSIBILE!')){
-    return;
-  }
-  
-  const selectedAdmin=db.users.find(u=>u.id===adminId);
-  if(!selectedAdmin){
-    showToast('Admin non trovato','error');
-    return;
-  }
-  
-  // Crea backup automatico prima del reset
-  createManualBackup();
-  
-  // Reset database mantenendo solo l'admin selezionato
-  db={
-    nextId:db.nextId||100,
-    nextProjectNum:db.nextProjectNum||1,
-    users:[{
-      id:selectedAdmin.id,
-      name:selectedAdmin.name,
-      username:selectedAdmin.username||selectedAdmin.name.toLowerCase().split(' ')[0],
-      role:'admin',
-      color:selectedAdmin.color||'#3A7BE8',
-      passwordHash:selectedAdmin.passwordHash
-    }],
-    clients:[],
-    projects:[],
-    entries:[],
-    rates:[]
-  };
-  
-  // Salva locale
-  localStorage.setItem(DB_KEY,JSON.stringify(db));
-  
-  // Cancella backup locali
-  localStorage.removeItem(BACKUP_KEY);
-  localStorage.removeItem('timetrack_last_backup');
-  
-  // Sync al cloud
-  if(supa){
-    updateSyncStatus('sync');
-    try{
-      const {error}=await supa.from('timetrack_data').upsert({id:1,data:db,updated_at:new Date().toISOString()});
-      if(error)throw error;
-      updateSyncStatus('ok');
-    }catch(e){
-      console.error('Errore sync dopo reset:',e);
-      updateSyncStatus('err');
-    }
-  }
-  
-  closeModal();
-  showToast('✅ Database resettato!');
-  
-  // Ricarica dopo 1.5 secondi
-  setTimeout(()=>{
-    location.reload();
-  },1500);
 }
 
 function exportJSON(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`timetrack_${todayStr()}.json`;a.click();URL.revokeObjectURL(u);showToast('Esportato!')}
@@ -1280,10 +825,10 @@ function openProjectDetail(id){
   if(p.deadline){const diff=st.dlDiff;if(diff<0){dlI=`Scaduta da ${Math.abs(diff)}gg`;dlC='var(--red)'}else if(diff<30){dlI=`${diff}gg rimasti`;dlC='var(--orange)'}else{dlI=`${diff}gg rimasti`}}
   const actHtml=(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${esc(a.name)} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna attività</span>';
   const byUser={};st.pe.forEach(e=>{byUser[e.userId]=(byUser[e.userId]||0)+e.hours});
-  const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${u?.color||'#888'};margin-right:4px"></span>${esc(u?.name||'?')} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
+  const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${safeColor(u?.color)};margin-right:4px"></span>${esc(u?.name||'?')} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
   const recent=[...st.pe].sort((a,b)=>(b.date+(b.createdAt||'')).localeCompare(a.date+(a.createdAt||''))).slice(0,8);
   const recentHtml=recent.map(e=>{const u=db.users.find(x=>x.id===e.userId);const a=p.activities?.find(x=>x.id===e.activityId);return`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);color:var(--text-dim);min-width:70px">${fmtDate(e.date)}</span>${_a()?`<span style="min-width:70px">${esc(u?.name?.split(' ')[0]||'?')}</span>`:''}<span style="flex:1;color:var(--text-dim)">${esc(a?.name||'—')}${e.note?' · '+esc(e.note):''}</span><span style="font-weight:600">${e.hours}h</span></div>`}).join('')||'<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Nessuna registrazione</div>';
-  const stBtn=(s,l,col,bg)=>`<button class="mini-btn" onclick="setProjectStatus('${p.id}','${s}');renderProjectReport();openProjectDetail('${p.id}')"${p.status===s?` style="background:${bg};color:${col};border-color:${col}"`:''}>${l}</button>`;
+  const stBtn=(s,l,col,bg)=>`<button class="mini-btn" onclick="setProjectStatus('${p.id}','${s}').then(()=>{renderProjectReport();openProjectDetail('${p.id}')})"${p.status===s?` style="background:${bg};color:${col};border-color:${col}"`:''}>${l}</button>`;
   openModal(`<h3>${esc(p.code||'—')} - ${esc(p.name)}</h3>
     <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 14px;flex-wrap:wrap"><span class="proj-card-client">${esc(cl?.name||'?')}</span><span style="color:var(--text-dim);font-size:12px">Ref: ${esc(p.referente||'—')}</span><span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div>
     <div class="proj-meters">
@@ -1315,7 +860,7 @@ function _mgmtFilteredProjects(){
 }
 function _mgmtProjRow(p){
   const cl=db.clients.find(c=>c.id===p.clientId);
-  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
+  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
 }
 function filterMgmtProjects(){
   mgmtProjectFilter.clientId=document.getElementById('mpf-client').value;
@@ -1330,7 +875,7 @@ function renderMC(){
   } else if(activeMgmt==='project'){
     el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${u.color}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${u.role}</span><span class="mgmt-item-meta" style="color:${u.passwordHash?'var(--green)':'var(--orange)'}">${u.passwordHash?'🔒 Password set':'⚠ No password'}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button>${u.passwordHash?`<button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Reset password">🔑</button>`:''}<button class="mini-btn danger" data-action="delete-user" data-id="${u.id}" title="Elimina">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mu-name" placeholder="Nome e cognome"><input id="mu-username" placeholder="Username (login)"><input id="mu-email" type="email" placeholder="Email"><select id="mu-role"><option value="">— Ruolo —</option><option value="admin">Admin</option><option value="operator">Operatore</option></select><button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Invia email di reset password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1374,8 +919,7 @@ function renderRatesTab(){
     </div>
   </div>`;
 }
-function addRate(){
-  if(!db.rates)db.rates=[];
+async function addRate(){
   const userId=document.getElementById('nr-user').value||null;
   const clientId=document.getElementById('nr-client').value||null;
   const projectId=document.getElementById('nr-project').value||null;
@@ -1385,10 +929,8 @@ function addRate(){
   const to=document.getElementById('nr-to').value||null;
   if(!from){showToast('Data inizio obbligatoria','error');return}
   if(costVal===''&&revVal===''){showToast('Inserisci almeno un valore (costo o ricavo)','error');return}
-  const costRate=costVal!==''?parseFloat(costVal):null;
-  const clientRate=revVal!==''?parseFloat(revVal):null;
-  db.rates.push({id:gid(),userId,clientId,projectId,costRate,clientRate,from,to});
-  saveDB();showToast('Tariffa aggiunta');renderMC();
+  const ok=await dbWrite(supa.from('rates').insert({id:gid(),user_id:userId,client_id:clientId,project_id:projectId,cost_rate:costVal!==''?parseFloat(costVal):null,client_rate:revVal!==''?parseFloat(revVal):null,valid_from:from,valid_to:to}),'Tariffa aggiunta');
+  if(ok)renderMC();
 }
 function editRateModal(id){
   const r=db.rates.find(x=>x.id===id);if(!r)return;
@@ -1402,51 +944,125 @@ function editRateModal(id){
     <div class="modal-field"><label>Valida fino al</label><input type="date" id="er-to" value="${r.to||''}"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveRateEdit('${id}')">Salva</button></div>`);
 }
-function saveRateEdit(id){
+async function saveRateEdit(id){
   const r=db.rates.find(x=>x.id===id);if(!r)return;
-  r.userId=document.getElementById('er-user').value||null;
-  r.clientId=document.getElementById('er-client').value||null;
-  r.projectId=document.getElementById('er-project').value||null;
   const cv=document.getElementById('er-cost').value;
   const rv=document.getElementById('er-rev').value;
-  r.costRate=cv!==''?parseFloat(cv):null;
-  r.clientRate=rv!==''?parseFloat(rv):null;
-  r.from=document.getElementById('er-from').value;
-  r.to=document.getElementById('er-to').value||null;
-  saveDB();closeModal();showToast('Tariffa aggiornata');renderMC();
+  const upd={
+    user_id:document.getElementById('er-user').value||null,
+    client_id:document.getElementById('er-client').value||null,
+    project_id:document.getElementById('er-project').value||null,
+    cost_rate:cv!==''?parseFloat(cv):null,
+    client_rate:rv!==''?parseFloat(rv):null,
+    valid_from:document.getElementById('er-from').value,
+    valid_to:document.getElementById('er-to').value||null
+  };
+  closeModal();
+  const ok=await dbWrite(supa.from('rates').update(upd).eq('id',id),'Tariffa aggiornata');
+  if(ok)renderMC();
 }
-function delRate(id){if(!confirm('Eliminare questa tariffa?'))return;db.rates=db.rates.filter(r=>r.id!==id);saveDB();showToast('Eliminata');renderMC()}
+async function delRate(id){
+  if(!confirm('Eliminare questa tariffa?'))return;
+  const ok=await dbWrite(supa.from('rates').delete().eq('id',id),'Eliminata');
+  if(ok)renderMC();
+}
 
 // CRUD Clients
-function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim();if(!n){showToast('Nome richiesto','error');return}db.clients.push({id:gid(),name:n,referente:ref,email,active:true});saveDB();showToast(n+' aggiunto');renderManage()}
+async function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim();if(!n){showToast('Nome richiesto','error');return}const ok=await dbWrite(supa.from('clients').insert({id:gid(),name:n,referente:ref,email,active:true}),n+' aggiunto');if(ok)renderManage()}
 function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${esc(c.name)}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${esc(c.referente||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${esc(c.email||'')}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
-function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;c.name=document.getElementById('ec-name').value.trim();c.referente=document.getElementById('ec-ref').value.trim();c.email=document.getElementById('ec-email').value.trim();c.active=document.getElementById('ec-active').value==='true';saveDB();closeModal();showToast('Aggiornato');renderManage()}
-function delClient(id){if(!confirm('Eliminare il cliente e tutte le sue commesse e registrazioni?'))return;db.projects=db.projects.filter(p=>p.clientId!==id);db.entries=db.entries.filter(e=>e.clientId!==id);db.clients=db.clients.filter(c=>c.id!==id);saveDB();showToast('Eliminato');renderManage()}
+async function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;const upd={name:document.getElementById('ec-name').value.trim(),referente:document.getElementById('ec-ref').value.trim(),email:document.getElementById('ec-email').value.trim(),active:document.getElementById('ec-active').value==='true'};closeModal();const ok=await dbWrite(supa.from('clients').update(upd).eq('id',id),'Aggiornato');if(ok)renderManage()}
+async function delClient(id){if(!confirm('Eliminare il cliente e tutte le sue commesse e registrazioni?'))return;const ok=await dbWrite(supa.from('clients').delete().eq('id',id),'Eliminato');if(ok)renderManage()}
 
 // CRUD Projects
-function addProject(){const cid=document.getElementById('mp-client').value,n=document.getElementById('mp-name').value.trim(),ref=document.getElementById('mp-ref').value.trim(),b=parseFloat(document.getElementById('mp-budget').value)||0,bh=parseFloat(document.getElementById('mp-hours').value)||0,dl=document.getElementById('mp-deadline').value||'';if(!cid){showToast('Seleziona cliente','error');return}if(!n){showToast('Nome richiesto','error');return}if(!db.nextProjectNum)db.nextProjectNum=1;const year=new Date().getFullYear().toString().slice(-2);const code=String(db.nextProjectNum).padStart(3,'0')+'/'+year;db.projects.push({id:gid(),clientId:cid,name:n,code,referente:ref,status:'active',budget:b,budgetHours:bh,deadline:dl,activities:[],assignedUsers:[]});db.nextProjectNum++;saveDB();showToast(n+' aggiunta');renderManage()}
-function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${u.color};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>✏ Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
-function saveProjectEdit(id){const p=db.projects.find(x=>x.id===id);if(!p)return;p.code=document.getElementById('ep-code').value.trim();p.name=document.getElementById('ep-name').value.trim();p.clientId=document.getElementById('ep-client').value;p.referente=document.getElementById('ep-ref').value.trim();p.budget=parseFloat(document.getElementById('ep-budget').value)||0;p.budgetHours=parseFloat(document.getElementById('ep-hours').value)||0;p.deadline=document.getElementById('ep-deadline').value||'';p.status=document.getElementById('ep-status').value;p.assignedUsers=db.users.filter(u=>document.getElementById('ep-usr-'+u.id)?.checked).map(u=>u.id);saveDB();closeModal();showToast('Commessa aggiornata');renderManage()}
-function delProject(id){if(!confirm('Eliminare la commessa e tutte le registrazioni associate?'))return;db.entries=db.entries.filter(e=>e.projectId!==id);db.projects=db.projects.filter(p=>p.id!==id);saveDB();showToast('Eliminata');renderManage()}
-function setProjectStatus(id,status){const p=db.projects.find(x=>x.id===id);if(!p)return;p.status=status;saveDB();showToast('Stato aggiornato');renderManage()}
+async function addProject(){
+  const cid=document.getElementById('mp-client').value,n=document.getElementById('mp-name').value.trim(),ref=document.getElementById('mp-ref').value.trim(),b=parseFloat(document.getElementById('mp-budget').value)||0,bh=parseFloat(document.getElementById('mp-hours').value)||0,dl=document.getElementById('mp-deadline').value||null;
+  if(!cid){showToast('Seleziona cliente','error');return}
+  if(!n){showToast('Nome richiesto','error');return}
+  updateSyncStatus('sync');
+  // Contatore atomico lato server (solo admin)
+  const {data:num,error:numErr}=await supa.rpc('next_project_num');
+  if(numErr){console.error(numErr);updateSyncStatus('err');showToast(friendlyDbError(numErr),'error');return}
+  const year=new Date().getFullYear().toString().slice(-2);
+  const code=String(num).padStart(3,'0')+'/'+year;
+  const pid=gid();
+  const {error:insErr}=await supa.from('projects').insert({id:pid,client_id:cid,name:n,code,referente:ref,status:'active',budget_hours:bh,deadline:dl,assigned_users:[]});
+  if(insErr){console.error(insErr);updateSyncStatus('err');showToast(friendlyDbError(insErr),'error');return}
+  const ok=await dbWrite(supa.from('project_finance').upsert({project_id:pid,budget:b}),n+' aggiunta');
+  if(ok)renderManage();
+}
+function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${safeColor(u.color)};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>✏ Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
+async function saveProjectEdit(id){
+  const p=db.projects.find(x=>x.id===id);if(!p)return;
+  const upd={
+    code:document.getElementById('ep-code').value.trim(),
+    name:document.getElementById('ep-name').value.trim(),
+    client_id:document.getElementById('ep-client').value,
+    referente:document.getElementById('ep-ref').value.trim(),
+    budget_hours:parseFloat(document.getElementById('ep-hours').value)||0,
+    deadline:document.getElementById('ep-deadline').value||null,
+    status:document.getElementById('ep-status').value,
+    assigned_users:db.users.filter(u=>document.getElementById('ep-usr-'+u.id)?.checked).map(u=>u.id)
+  };
+  const budget=parseFloat(document.getElementById('ep-budget').value)||0;
+  closeModal();
+  updateSyncStatus('sync');
+  const {error:updErr}=await supa.from('projects').update(upd).eq('id',id);
+  if(updErr){console.error(updErr);updateSyncStatus('err');showToast(friendlyDbError(updErr),'error');return}
+  const ok=await dbWrite(supa.from('project_finance').upsert({project_id:id,budget}),'Commessa aggiornata');
+  if(ok)renderManage();
+}
+async function delProject(id){
+  if(!confirm('Eliminare la commessa e tutte le registrazioni associate?'))return;
+  const ok=await dbWrite(supa.from('projects').delete().eq('id',id),'Eliminata');
+  if(ok)renderManage();
+}
+async function setProjectStatus(id,status){
+  const ok=await dbWrite(supa.from('projects').update({status}).eq('id',id),'Stato aggiornato');
+  if(ok)renderManage();
+}
 window.setProjectStatus=setProjectStatus;
 
 // CRUD Activities (per project)
-function addAct(pid){const inp=document.getElementById('sa-'+pid);const n=inp.value.trim();if(!n){showToast('Nome richiesto','error');return}const p=db.projects.find(x=>x.id===pid);if(!p)return;if(!p.activities)p.activities=[];p.activities.push({id:gid(),name:n});saveDB();showToast(n+' aggiunta');renderManage()}
+async function addAct(pid){const inp=document.getElementById('sa-'+pid);const n=inp.value.trim();if(!n){showToast('Nome richiesto','error');return}const ok=await dbWrite(supa.from('activities').insert({id:gid(),project_id:pid,name:n}),n+' aggiunta');if(ok)renderManage()}
 function editActModal(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;openModal(`<h3>✏ Modifica Attività</h3><div class="modal-field"><label>Nome</label><input id="ea-name" value="${esc(a.name)}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveActEdit('${pid}','${aid}')">Salva</button></div>`)}
-function saveActEdit(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;a.name=document.getElementById('ea-name').value.trim();saveDB();closeModal();showToast('Aggiornata');renderManage()}
-function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const p=db.projects.find(x=>x.id===pid);if(!p)return;p.activities=p.activities.filter(a=>a.id!==aid);saveDB();showToast('Eliminata');renderManage()}
+async function saveActEdit(pid,aid){const n=document.getElementById('ea-name').value.trim();closeModal();const ok=await dbWrite(supa.from('activities').update({name:n}).eq('id',aid),'Aggiornata');if(ok)renderManage()}
+async function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const ok=await dbWrite(supa.from('activities').delete().eq('id',aid),'Eliminata');if(ok)renderManage()}
 
 // CRUD Users
-function addUser(){const n=document.getElementById('mu-name').value.trim(),un=document.getElementById('mu-username').value.trim(),email=document.getElementById('mu-email').value.trim(),r=document.getElementById('mu-role').value;if(!n){showToast('Nome richiesto','error');return}if(!un){showToast('Username richiesto','error');return}if(!r){showToast('Seleziona ruolo','error');return}db.users.push({id:gid(),name:n,username:un,email,role:r,color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),active:true});saveDB();showToast(n+' aggiunto');renderManage();renderLogin()}
-function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="eu-email" value="${esc(u.email||'')}"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
-function saveUserEdit(id){const u=db.users.find(x=>x.id===id);if(!u)return;u.name=document.getElementById('eu-name').value.trim();u.username=document.getElementById('eu-username').value.trim();u.email=document.getElementById('eu-email').value.trim();u.role=document.getElementById('eu-role').value;saveDB();closeModal();showToast('Aggiornato');renderManage();renderLogin()}
-function delUser(id){if(db.users.length<=1){showToast('Serve almeno un utente','error');return}if(id===currentUser.id){showToast('Non puoi eliminare te stesso','error');return}if(!confirm('Eliminare questo utente e tutte le sue registrazioni?'))return;db.entries=db.entries.filter(e=>e.userId!==id);db.users=db.users.filter(u=>u.id!==id);saveDB();showToast('Eliminato');renderManage();renderLogin()}
-function toggleUserActive(uid){if(!_a())return;const u=db.users.find(x=>x.id===uid);if(!u)return;if(u.role==='admin'){showToast('Non puoi sospendere un amministratore','error');return}if(uid===currentUser.id){showToast('Non puoi sospendere te stesso','error');return}u.active=u.active===false?true:false;saveDB();showToast(u.active?u.name+' riattivato':u.name+' sospeso');renderManage();renderLogin()}
-
-// ═══ IMPORT ═══
-document.addEventListener('dragover',e=>{e.preventDefault()});
-document.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(!f||!f.name.endsWith('.json'))return;const r=new FileReader();r.onload=ev=>{try{const imp=JSON.parse(ev.target.result);if(imp.users&&imp.projects){db=imp;saveDB();showToast('Importato!');logout()}else showToast('File non valido','error')}catch(err){showToast('Errore','error')}};r.readAsText(f)});
+// Gli account si creano SOLO per invito (Supabase Auth): la creazione va
+// fatta dal Dashboard Supabase (Authentication → Users → Invite user,
+// impostando nei metadata name/username/role) o dallo script di migrazione.
+function addUser(){
+  openModal(`<h3>➕ Nuovo utente</h3>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6">Per sicurezza i nuovi account si creano dal <b>Dashboard Supabase</b>:<br>
+    1. Authentication → Users → <b>Invite user</b> con l'email della persona<br>
+    2. In "User Metadata" inserire: <code>{"name":"Nome Cognome","username":"nome","role":"operator"}</code><br>
+    3. La persona riceve l'email di invito e imposta la propria password<br><br>
+    Il profilo compare qui automaticamente al primo accesso.</p>
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Ho capito</button></div>`);
+}
+function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email (gestita dall'account di accesso)</label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled style="opacity:.6"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
+async function saveUserEdit(id){
+  const u=db.users.find(x=>x.id===id);if(!u)return;
+  const upd={
+    name:document.getElementById('eu-name').value.trim(),
+    username:document.getElementById('eu-username').value.trim()||null,
+    role:document.getElementById('eu-role').value
+  };
+  closeModal();
+  // Il cambio ruolo è consentito solo agli admin: lo verifica il server
+  const ok=await dbWrite(supa.from('profiles').update(upd).eq('id',id),'Aggiornato');
+  if(ok)renderManage();
+}
+async function toggleUserActive(uid){
+  if(!_a())return;
+  const u=db.users.find(x=>x.id===uid);if(!u)return;
+  if(u.role==='admin'){showToast('Non puoi sospendere un amministratore','error');return}
+  if(uid===currentUser.id){showToast('Non puoi sospendere te stesso','error');return}
+  const newActive=u.active===false;
+  const ok=await dbWrite(supa.from('profiles').update({active:newActive}).eq('id',uid),newActive?u.name+' riattivato':u.name+' sospeso');
+  if(ok)renderManage();
+}
 
 // ═══ EXPOSE FUNCTIONS GLOBALLY ═══
 window.delEntry=delEntry;
@@ -1469,7 +1085,6 @@ window.delAct=delAct;
 window.addUser=addUser;
 window.editUserModal=editUserModal;
 window.saveUserEdit=saveUserEdit;
-window.delUser=delUser;
 window.toggleUserActive=toggleUserActive;
 window.closeModal=closeModal;
 window.onQeProjectChange3=onQeProjectChange3;
@@ -1785,13 +1400,6 @@ window.showExportModal=showExportModal;
 window.closeExportModal=closeExportModal;
 window.exportReportPDF=exportReportPDF;
 window.exportReportExcel=exportReportExcel;
-window.createManualBackup=createManualBackup;
-window.importBackupFile=importBackupFile;
-window.restoreBackup=restoreBackup;
-window.downloadBackup=downloadBackup;
-window.deleteBackup=deleteBackup;
-window.showResetModal=showResetModal;
-window.executeReset=executeReset;
 window.onFilterChange=onFilterChange;
 window.applyFilters=applyFilters;
 window.resetFilters=resetFilters;
@@ -1799,7 +1407,7 @@ window.submitLogin=submitLogin;
 window.logout=logout;
 window.changePassword=changePassword;
 window.submitChangePwd=submitChangePwd;
-window.submitPwd=submitPwd;
+window.submitSetPwd=submitSetPwd;
 window.closePwdModal=closePwdModal;
 window.resetUserPassword=resetUserPassword;
 window.setView=setView;
@@ -1826,10 +1434,34 @@ function updateHeaderClock(){
 
 // ═══ INIT ═══
 (async function(){
-  await loadDB();
   selectedWeek=getWeekStart(todayStr());
-  initAutoBackup();
-  renderLogin();
   updateHeaderClock();
   setInterval(updateHeaderClock,1000);
+
+  // Pulizia: la vecchia versione salvava l'intero DB (hash password inclusi)
+  // in localStorage — rimuovi ogni residuo dai dispositivi
+  ['timetrack_v5','timetrack_v5_pending','timetrack_v5_savedAt','timetrack_backups','timetrack_last_backup','tt_saved_username']
+    .forEach(k=>localStorage.removeItem(k));
+
+  // Link di recovery (email "reimposta password"): mostra la schermata dedicata
+  supa.auth.onAuthStateChange((event)=>{
+    if(event==='PASSWORD_RECOVERY')showSetPasswordModal();
+  });
+
+  updateSyncStatus('sync');
+  const {data:{session}}=await supa.auth.getSession();
+  if(session){
+    if(_authFlowType==='invite'||_authFlowType==='recovery'||_authFlowType==='signup'){
+      // Arrivo da link di invito/recovery: prima imposta la password
+      updateSyncStatus('ok');
+      showSetPasswordModal();
+    }else{
+      // Sessione esistente: auto-login
+      const ok=await initSession().catch(e=>{console.error(e);return false});
+      if(!ok)renderLogin();
+    }
+  }else{
+    updateSyncStatus('ok');
+    renderLogin();
+  }
 })();
