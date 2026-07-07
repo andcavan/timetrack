@@ -82,7 +82,7 @@ Poi imposta le variabili d'ambiente (valgono solo per quella finestra di termina
 
 ```powershell
 $env:SUPABASE_URL = "https://latuujorgnaksdhxazfb.supabase.co"
-$env:SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODIwMTk3MiwiZXhwIjoyMDkzNzc3OTcyfQ.qOY2H93ttWvy1PCyZsT6_UyDkYe0Ws73R1UBAd-g9V4"
+$env:SUPABASE_SERVICE_ROLE_KEY = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
 ### 0.7 Prova generale (senza scrivere nulla)
