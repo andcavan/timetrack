@@ -13,6 +13,12 @@
 //
 //  Opzioni:
 //    --dry-run            non scrive nulla, stampa solo il report
+//    --print-links        NON invia email: genera i link di invito e li
+//                         stampa a video, da inviare a mano (WhatsApp,
+//                         Teams, ...). Aggira il rate limit email di
+//                         Supabase (il servizio integrato manda ~2
+//                         email/ora, solo per test). I link scadono:
+//                         vanno usati entro 24 ore.
 //    --fallback-domain=X  dominio per utenti SENZA email reale
 //                         (es. --fallback-domain=azienda.it →
 //                          crea username@azienda.it con password
@@ -32,6 +38,7 @@ if (!URL || !KEY) {
   process.exit(1);
 }
 const DRY = process.argv.includes('--dry-run');
+const PRINT_LINKS = process.argv.includes('--print-links');
 const fallbackArg = process.argv.find(a => a.startsWith('--fallback-domain='));
 const FALLBACK_DOMAIN = fallbackArg ? fallbackArg.split('=')[1] : null;
 
@@ -76,6 +83,7 @@ async function insertAll(table, rows) {
   // ── 3. Crea gli account auth (invito o password temporanea) ──
   const idMap = {}; // vecchio id utente → uuid auth
   const tempPasswords = [];
+  const inviteLinks = [];
   // gestisci ri-esecuzioni: riusa gli account già creati (match su legacy_id nei profiles)
   const { data: existingProfiles } = await supa.from('profiles').select('id, legacy_id');
   const existingByLegacy = Object.fromEntries((existingProfiles || []).filter(p => p.legacy_id).map(p => [p.legacy_id, p.id]));
@@ -97,7 +105,16 @@ async function insertAll(table, rows) {
       idMap[u.id] = 'dry-' + u.id;
       continue;
     }
-    if (hasEmail) {
+    if (hasEmail && PRINT_LINKS) {
+      // Genera il link di invito SENZA inviare email (aggira il rate limit)
+      const { data, error } = await supa.auth.admin.generateLink({
+        type: 'invite', email: u.email, options: { data: meta }
+      });
+      if (error) die(`generazione link per ${u.email}`, error);
+      idMap[u.id] = data.user.id;
+      inviteLinks.push({ user: u.name, email: u.email, link: data.properties.action_link });
+      console.log(`  ✓ link generato: ${u.email} (${u.username || u.name})`);
+    } else if (hasEmail) {
       const { data, error } = await supa.auth.admin.inviteUserByEmail(u.email, { data: meta });
       if (error) die(`invito a ${u.email}`, error);
       idMap[u.id] = data.user.id;
@@ -207,6 +224,13 @@ async function insertAll(table, rows) {
     console.log(allOk ? '\n✓ MIGRAZIONE COMPLETATA' : '\n✗ CONTEGGI NON COINCIDONO — verificare prima dello switch!');
   }
 
+  if (inviteLinks.length) {
+    console.log('\n═══ LINK DI INVITO (inviarli a mano a ciascuno; scadono in ~24h) ═══');
+    inviteLinks.forEach(l => console.log(`\n  ${l.user} <${l.email}>:\n  ${l.link}`));
+    console.log('\n  Se un link scade prima di essere usato: bottone 🔑 nella nuova app');
+    console.log('  (Gestione → Utenti) per inviare un reset via email, oppure rigenera');
+    console.log('  il link dal Dashboard → Authentication → Users → ... → Send magic link.');
+  }
   if (tempPasswords.length) {
     console.log('\n═══ PASSWORD TEMPORANEE (comunicare a voce, poi far cambiare) ═══');
     tempPasswords.forEach(t => console.log(`  ${t.user}: ${t.email} / ${t.tempPwd}`));

@@ -69,7 +69,20 @@ Nel Dashboard Supabase:
    - **Project URL** (es. `https://latuujorgnaksdhxazfb.supabase.co`);
    - la chiave **service_role** (⚠️ è la chiave "padrona": non condividerla, non committarla su git, non metterla mai nell'app — si usa solo sul tuo PC per la migrazione).
 
-### 0.6 Prepara lo script sul tuo PC
+### 0.6 Decidi come inviare le email di invito (IMPORTANTE)
+
+Il servizio email **integrato** di Supabase è solo per i test: manda **~2 email l'ora** ("email rate limit exceeded" oltre quella soglia). Con più utenti da invitare non basta. Due strade:
+
+**Opzione A — Link di invito a mano (più semplice, zero configurazione)**
+Esegui la migrazione con l'opzione `--print-links`: lo script **non invia email** ma stampa a video un link di invito per ogni utente, da girare tu stesso via WhatsApp/Teams/email personale. I link scadono in ~24 ore, quindi distribuiscili subito dopo la migrazione.
+Nota: anche il bottone 🔑 (reset password) della nuova app usa le email, quindi con questa opzione i reset futuri saranno limitati a ~2/ora — accettabile per un team piccolo.
+
+**Opzione B — SMTP personalizzato (più lavoro, soluzione definitiva)**
+Dashboard → **Project Settings → Authentication → SMTP Settings**: inserisci i dati SMTP di una casella aziendale (o un servizio gratuito come Brevo, ~300 email/giorno). Poi in **Authentication → Rate Limits** alza il limite email. Da quel momento inviti e reset password funzionano senza limiti pratici.
+
+> Se hai già visto l'errore "email rate limit exceeded": il contatore si azzera dopo circa un'ora; non serve fare altro.
+
+### 0.7 Prepara lo script sul tuo PC
 
 Apri un terminale (PowerShell) nella cartella del progetto:
 
@@ -85,7 +98,7 @@ $env:SUPABASE_URL = "https://latuujorgnaksdhxazfb.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
-### 0.7 Prova generale (senza scrivere nulla)
+### 0.8 Prova generale (senza scrivere nulla)
 
 ```powershell
 node migrate.mjs --dry-run
@@ -125,8 +138,10 @@ Nel terminale di prima (con le variabili ancora impostate):
 node migrate.mjs
 ```
 
+(oppure `node migrate.mjs --print-links` se al punto 0.6 hai scelto l'Opzione A: alla fine stampa i link di invito da distribuire a mano).
+
 Lo script:
-- crea gli account e **invia le email di invito**;
+- crea gli account e **invia le email di invito** (o genera i link, con `--print-links`);
 - travasa clienti, commesse, attività, tariffe, ore e costi storici;
 - alla fine stampa una sezione **"Verifica"** con i conteggi.
 
