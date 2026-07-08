@@ -3,7 +3,13 @@
     "allow": [
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\prog3\\\\Desktop\\\\APP MECCANICA\\\\timetrack-supabase\\\\src\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")",
+      "PowerShell(node --check app.js)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST https://latuujorgnaksdhxazfb.supabase.co/functions/v1/invite-user -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -X POST https://latuujorgnaksdhxazfb.supabase.co/functions/v1/invite-user -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y' -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -X POST https://latuujorgnaksdhxazfb.supabase.co/functions/v1/invite-user -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y' -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' 'https://latuujorgnaksdhxazfb.supabase.co/rest/v1/profiles?select=id&limit=1' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y')",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' https://latuujorgnaksdhxazfb.supabase.co/auth/v1/health -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y')"
     ]
   }
 }

@@ -315,6 +315,22 @@ async function submitSetPwd(){
   await initSession();
 }
 
+// Estrae un messaggio leggibile dagli errori di supa.functions.invoke:
+// la nostra funzione risponde {error}, il gateway Supabase {code,message}
+async function fnErrorMessage(error,fallback){
+  if(!error.context){
+    if(error.name==='FunctionsFetchError')return `${fallback}: funzione non raggiungibile (rete o deploy mancante)`;
+    return error.message?`${fallback} (${error.message})`:fallback;
+  }
+  const status=error.context.status;
+  try{
+    const ctx=await error.context.json();
+    if(ctx?.error)return ctx.error;
+    if(ctx?.message)return `${fallback} (${status||'?'}: ${ctx.message})`;
+  }catch(e){}
+  return status?`${fallback} (HTTP ${status})`:fallback;
+}
+
 // Reset password (solo admin): genera un link di reimpostazione via
 // Edge Function (nessuna email: il link va girato a mano alla persona)
 async function resetUserPassword(uid){
@@ -326,9 +342,7 @@ async function resetUserPassword(uid){
   const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',email:u.email}});
   if(error){
     console.error(error);
-    let msg='Generazione non riuscita';
-    try{const ctx=await error.context?.json();if(ctx?.error)msg=ctx.error}catch(e){}
-    showToast(msg,'error');
+    showToast(await fnErrorMessage(error,'Generazione non riuscita'),'error');
     return;
   }
   showInviteLinkModal(`Link per ${esc(u.name)}`,data.link);
@@ -1064,9 +1078,7 @@ async function submitNewUser(){
   const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role}});
   if(error){
     btn.disabled=false;btn.textContent='Crea e genera link';
-    let msg='Creazione non riuscita';
-    try{const ctx=await error.context?.json();if(ctx?.error)msg=ctx.error}catch(e){}
-    showErr(msg);
+    showErr(await fnErrorMessage(error,'Creazione non riuscita'));
     return;
   }
   try{await loadAll()}catch(e){console.error(e)}
