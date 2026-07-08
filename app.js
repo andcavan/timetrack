@@ -14,10 +14,11 @@ let db=null,currentUser=null,currentEmail=null,currentView='timesheet',selectedW
 const _authFlowType=new URLSearchParams((location.hash||'').replace(/^#/,'')).get('type');
 
 // ═══ SUPABASE CONFIG ═══
-// La anon key è pubblica per progettazione: senza sessione autenticata
-// le policy RLS non le concedono alcun accesso.
+// La publishable key è pubblica per progettazione: senza sessione autenticata
+// le policy RLS non le concedono alcun accesso. (Sostituisce la vecchia anon
+// key legacy: il gateway delle Edge Functions accetta solo le chiavi nuove.)
 const SUPABASE_URL='https://latuujorgnaksdhxazfb.supabase.co';
-const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhdHV1am9yZ25ha3NkaHhhemZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMDE5NzIsImV4cCI6MjA5Mzc3Nzk3Mn0.xG3LluYAsPiTdCIVYdBQk1KX70BlhTKTccIzvQ-Xz7Y';
+const SUPABASE_KEY='sb_publishable_xA_K9OBN3t3zUR4OBobx9A_vErdBrir';
 const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 function updateSyncStatus(status){

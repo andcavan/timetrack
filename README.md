@@ -8,7 +8,7 @@ App di registrazione ore con Supabase (Auth + Postgres + RLS).
 - **Dati normalizzati** in tabelle (`profiles`, `clients`, `projects`, `activities`, `entries`, `rates`, ...) protette da **Row Level Security**:
   - un *operator* vede e modifica **solo le proprie ore**; tariffe, costi e budget € non gli vengono mai inviati;
   - un *admin* vede tutto; il ruolo è protetto lato server (nessuna auto-promozione possibile);
-  - la anon key (pubblica per progettazione) **senza sessione non accede a nulla**.
+  - la publishable key (pubblica per progettazione) **senza sessione non accede a nulla**.
 - Le tariffe delle ore vengono "fotografate" da un trigger server-side (`entry_costs`), mai calcolate nel browser.
 - Script CDN pinnati con Subresource Integrity.
 
@@ -201,7 +201,8 @@ La creazione account richiede la service_role key, che non può stare nel browse
 1. Dashboard Supabase → **Edge Functions** → **Deploy a new function** (editor nel browser, "via Editor").
 2. Nome funzione: `invite-user` (esattamente questo).
 3. Cancella il codice di esempio e incolla tutto il contenuto di `supabase/functions/invite-user/index.ts`.
-4. **Deploy**. Lascia attiva la verifica JWT (impostazione predefinita).
+4. **Deploy**. **Disattiva la verifica JWT** ("Verify JWT with legacy secret" OFF, sia nel dialogo di deploy sia nella scheda Settings della funzione): il progetto usa le nuove API keys e la verifica legacy del gateway rifiuterebbe ogni chiamata con `401 INVALID_CREDENTIALS`. La sicurezza non ne risente: la funzione verifica da sola che il chiamante sia un admin attivo.
+5. Attenzione a incollare **tutto** il contenuto del file: se resta il codice di esempio, la funzione risponde `"Hello ..."` e l'app mostra "Generazione non riuscita".
 
 **Fallback senza Edge Function** — gli script locali continuano a funzionare:
 
