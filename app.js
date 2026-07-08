@@ -751,6 +751,213 @@ function renderBackupTab(){
 
 function exportJSON(){const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`timetrack_${todayStr()}.json`;a.click();URL.revokeObjectURL(u);showToast('Esportato!')}
 
+// ═══ GUIDA (solo admin) ═══
+function renderGuideTab(){
+  if(!_a())return;
+  const el=document.getElementById('mgmt-content');
+  el.innerHTML=`<div class="mgmt-panel guide">
+    <h3 style="margin:0 0 6px;color:var(--accent)">📖 Guida all'uso e alla configurazione</h3>
+    <p class="guide-intro">Manuale completo di TimeTrack riservato agli amministratori. Clicca su una sezione per aprirla.</p>
+
+    <details open>
+      <summary>👥 Ruoli e permessi</summary>
+      <div class="guide-body">
+        <p>Ogni utente ha uno dei due ruoli, applicati <b>lato server</b> (Row Level Security su Supabase): anche modificando il browser non è possibile aggirarli.</p>
+        <table>
+          <tr><th></th><th>Operatore</th><th>Admin</th></tr>
+          <tr><td>Registrare ore</td><td>Solo le proprie</td><td>Le proprie (e vede quelle di tutti)</td></tr>
+          <tr><td>Vedere le ore</td><td>Solo le proprie</td><td>Di tutti gli utenti</td></tr>
+          <tr><td>Costi, ricavi, budget €</td><td>Mai visibili (il server non li invia proprio)</td><td>Visibili ovunque</td></tr>
+          <tr><td>Anagrafiche (clienti, commesse, attività)</td><td>Sola lettura</td><td>Creazione, modifica, eliminazione</td></tr>
+          <tr><td>Utenti, tariffe, backup, guida</td><td>Non accessibili</td><td>Tab Gestione</td></tr>
+        </table>
+        <ul>
+          <li>Il ruolo si cambia da <b>Gestione → Utenti → ✏</b>. Un trigger server impedisce l'auto-promozione: solo un admin può cambiare i ruoli.</li>
+          <li>Un admin non può essere sospeso, e nessuno può sospendere sé stesso.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>⏱ Registrare le ore (tab Ore)</summary>
+      <div class="guide-body">
+        <h4>Inserimento rapido</h4>
+        <ol>
+          <li><b>Commessa</b>: digita nel campo di ricerca (codice, nome o cliente). Compaiono solo le commesse <b>attive</b> e, se la commessa ha utenti assegnati, solo agli assegnati.</li>
+          <li>Il <b>cliente</b> si compila da solo; scegli l'<b>attività</b> dalla tendina (le attività si definiscono per commessa in Gestione → Commesse).</li>
+          <li><b>Data</b> (proposta oggi), <b>ore</b> a passi di 0,25 (15 minuti) — oppure usa i bottoni rapidi 1h/2h/4h/6h/8h — e una <b>nota</b> facoltativa.</li>
+          <li>Premi <b>✓ Registra Ore</b>.</li>
+        </ol>
+        <h4>Griglia settimanale</h4>
+        <ul>
+          <li>Frecce ◀ ▶ per cambiare settimana, <b>OGGI</b> per tornare a quella corrente; in alto a destra il totale ore della settimana.</li>
+          <li>Clic su una registrazione per <b>modificarla</b>; dentro la modifica trovi anche l'eliminazione.</li>
+          <li>Un operatore vede e modifica solo le proprie registrazioni; un admin vede quelle di tutti.</li>
+        </ul>
+        <div class="g-tip">Al momento della registrazione il server "fotografa" la tariffa in vigore per quell'utente/commessa: i report economici restano corretti anche se le tariffe cambiano in seguito.</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>📊 Report e esportazioni (tab Report)</summary>
+      <div class="guide-body">
+        <h4>Filtri</h4>
+        <ul>
+          <li><b>Periodo</b>: mese corrente/scorso, anno corrente/scorso, tutto, oppure date personalizzate.</li>
+          <li><b>Cliente, commessa, utente</b>: combinabili tra loro. Premi <b>🔍 Applica filtri</b>; <b>↺ Reset</b> riparte da zero.</li>
+        </ul>
+        <p>Sotto i filtri trovi i KPI del periodo, il dettaglio per cliente e per commessa e l'elenco delle registrazioni filtrate. Costi e ricavi compaiono solo agli admin.</p>
+        <h4>Esporta Report (Excel o PDF)</h4>
+        <ul>
+          <li>Il bottone <b>📊 Esporta Report</b> apre le opzioni: titolo, colonne da includere (data, utente, cliente, commessa, attività, ore, costo €, ricavo €, note), raggruppamento per cliente/commessa/utente, totali per gruppo e riepilogo KPI.</li>
+          <li>L'export rispetta i filtri attivi: filtra prima, esporta poi.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>📋 Monitoraggio commesse (tab Commesse)</summary>
+      <div class="guide-body">
+        <ul>
+          <li>Una scheda per commessa con avanzamento <b>ore</b> (usate / budget ore), <b>budget €</b> (solo admin) e <b>scadenza</b>.</li>
+          <li>Ricerca e filtri per cliente e stato; ordinamento per scadenza, % ore consumate, ore registrate, budget o nome.</li>
+          <li>Clic su una scheda per il dettaglio: ore per attività, ore per utente (admin), ultime registrazioni, cambio stato e modifica rapida.</li>
+        </ul>
+        <h4>Semafori di rischio</h4>
+        <table>
+          <tr><th>Avviso</th><th>Quando scatta</th></tr>
+          <tr><td>🔴 Scaduta / Fuori budget / Ore esaurite</td><td>Scadenza superata, oppure budget € o ore al 100%</td></tr>
+          <tr><td>🟡 In avvicinamento</td><td>Scadenza entro 14 giorni, oppure budget € o ore oltre l'85%</td></tr>
+        </table>
+        <p>Le commesse <b>completate</b> non generano avvisi.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>🗂 Gestione anagrafiche: clienti e commesse</summary>
+      <div class="guide-body">
+        <h4>Clienti</h4>
+        <ul>
+          <li>Aggiungi con nome, referente, email. Un cliente <b>inattivo</b> resta nei report ma segnalato come tale.</li>
+        </ul>
+        <div class="g-danger"><b>Eliminare un cliente cancella anche tutte le sue commesse e le ore registrate.</b> Se vuoi solo "archiviarlo", mettilo Inattivo.</div>
+        <h4>Commesse</h4>
+        <ul>
+          <li>Alla creazione il <b>codice</b> (es. <code>012/26</code>) è assegnato automaticamente da un contatore progressivo sul server: niente doppioni anche se due admin creano commesse nello stesso momento.</li>
+          <li>Campi: cliente, nome, referente, <b>budget €</b>, <b>budget ore</b>, <b>scadenza</b>. Tutto modificabile con ✏.</li>
+          <li><b>Stati</b>: Attivo (registrabile), Completato e Sospeso (non compaiono nell'inserimento rapido).</li>
+          <li><b>Attività</b>: ogni commessa ha il suo elenco (es. "Progettazione", "Montaggio"); si aggiungono dal riquadro sotto la commessa e sono richieste per registrare le ore.</li>
+          <li><b>Utenti assegnati</b> (✏ → spunte): se ne selezioni alcuni, solo loro vedranno la commessa nell'inserimento rapido; se lasci vuoto, la vedono tutti.</li>
+        </ul>
+        <div class="g-danger">Anche l'eliminazione di una commessa o di una attività cancella le registrazioni collegate. Preferisci lo stato "Completato" o "Sospeso".</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>👤 Gestione utenti: inviti, password, sospensioni</summary>
+      <div class="guide-body">
+        <h4>Creare un nuovo utente</h4>
+        <ol>
+          <li><b>Gestione → Utenti → + Nuovo utente (invito)</b>: nome e cognome, email (sarà il login), username, ruolo.</li>
+          <li>Premi <b>Crea e genera link</b>: l'app crea l'account e mostra un <b>link di invito</b>.</li>
+          <li>Copia il link (📋) e invialo alla persona come preferisci (WhatsApp, Teams, email…). Aprendolo imposterà la propria password ed entrerà.</li>
+        </ol>
+        <div class="g-warn">Il link <b>scade in circa 24 ore</b> e vale una volta sola. Se scade prima dell'uso, genera un link di reimpostazione con 🔑 accanto all'utente.</div>
+        <h4>Reimpostare una password</h4>
+        <ul>
+          <li>Bottone <b>🔑</b> accanto all'utente → conferma → si genera un link di reimpostazione da girare a mano. Nessuna email automatica: è una scelta di configurazione (nessun SMTP), così non ci sono limiti di invio.</li>
+          <li>Ogni utente può inoltre cambiare la propria password dal menu in alto a destra (serve la password attuale).</li>
+        </ul>
+        <h4>Sospendere e modificare</h4>
+        <ul>
+          <li><b>⏸ Sospendi / ✓ Riattiva</b>: un utente sospeso non può più accedere né scrivere; le sue ore restano nei report. È la via giusta quando qualcuno lascia: <b>non esiste l'eliminazione</b>, così lo storico resta integro.</li>
+          <li><b>✏ Modifica</b>: nome, username e ruolo. L'email non si cambia da qui (è l'identità di accesso: si gestisce dal pannello Supabase → Authentication → Users).</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>💰 Tariffe: costi, ricavi e storicizzazione</summary>
+      <div class="guide-body">
+        <p>Le tariffe determinano i valori economici dei report: <b>costo €/h</b> (quanto costa l'ora dell'operatore) e <b>ricavo €/h</b> (quanto viene fatturata al cliente).</p>
+        <h4>Specificità</h4>
+        <ul>
+          <li>Ogni tariffa può valere per <b>tutti o un utente</b> × <b>tutti o un cliente</b> × <b>tutte o una commessa</b>.</li>
+          <li>A parità di condizioni vince la tariffa <b>più specifica</b>: es. "Mario su commessa 012/26" batte "Mario (tutte)" che batte "(tutti)(tutte)".</li>
+        </ul>
+        <h4>Validità nel tempo</h4>
+        <ul>
+          <li>Ogni tariffa ha <b>Valida dal</b> e opzionalmente <b>fino al</b>; senza data di fine è attiva. Le tariffe chiuse finiscono nello Storico.</li>
+          <li>Per un aumento dal 1° gennaio: chiudi la vecchia (fino al 31/12) e creane una nuova (dal 01/01). Non modificare i valori della vecchia.</li>
+        </ul>
+        <div class="g-tip">La tariffa viene <b>fotografata sulla registrazione</b> nel momento in cui l'ora viene salvata (trigger server). Cambiare o eliminare una tariffa oggi non altera il valore delle ore già registrate.</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>💾 Backup, sincronizzazione e sicurezza dei dati</summary>
+      <div class="guide-body">
+        <ul>
+          <li>I dati vivono su <b>Supabase</b> (Postgres) con backup automatici lato server (Dashboard → Database → Backups).</li>
+          <li>Da <b>Gestione → Backup → ⬇ Esporta JSON</b> puoi scaricare periodicamente una copia locale dei dati.</li>
+          <li>L'app riceve le modifiche degli altri utenti <b>in tempo reale</b>; un controllo di sicurezza ogni 60 secondi copre eventuali eventi persi. L'indicatore in alto mostra lo stato: ✓ Sincronizzato, ⟳ in corso, ✗ errore, ○ offline.</li>
+          <li>Il login usa <b>Supabase Auth</b> (email + password verificate dal server, minimo 8 caratteri); la sessione si rinnova da sola.</li>
+          <li>La chiave presente nel sorgente dell'app (publishable key) è <b>pubblica per progettazione</b>: senza login non dà accesso a nulla, sono le policy RLS a decidere chi vede cosa.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>⚙ Configurazione tecnica (Supabase e pubblicazione)</summary>
+      <div class="guide-body">
+        <h4>Architettura</h4>
+        <ul>
+          <li><b>Frontend</b>: 3 file statici (<code>index.html</code>, <code>app.js</code>, <code>style.css</code>) pubblicati su hosting semplice; librerie da CDN con integrità verificata (SRI).</li>
+          <li><b>Backend</b>: progetto Supabase — Auth, Postgres con RLS, Realtime, e la Edge Function <code>invite-user</code>.</li>
+          <li><b>Schema e procedura completa</b>: nel repository, <code>migrations/schema.sql</code> e <code>README.md</code>.</li>
+        </ul>
+        <h4>Edge Function invite-user</h4>
+        <ul>
+          <li>Crea gli utenti e genera i link di invito/reimpostazione usando la chiave <code>service_role</code>, che non può stare nel browser: per questo gira sul server Supabase. Verifica da sola che il chiamante sia un admin attivo.</li>
+          <li>Il sorgente è nel repository: <code>supabase/functions/invite-user/index.ts</code>. Per (ri)pubblicarla: Dashboard → Edge Functions → invite-user → Code → incolla <b>tutto</b> il file → Deploy.</li>
+        </ul>
+        <div class="g-warn"><b>Due errori già capitati, da non ripetere:</b><br>1) La verifica JWT del gateway ("Verify JWT with legacy secret") deve restare <b>disattivata</b> (scheda Settings della funzione e spunta nel dialogo di deploy): il progetto usa le nuove API keys e la verifica legacy respingerebbe ogni chiamata con <code>401 INVALID_CREDENTIALS</code>.<br>2) Se dopo un deploy i link non funzionano e l'errore è generico, controlla di non aver pubblicato il <b>codice di esempio</b> dell'editor al posto del file vero.</div>
+        <h4>Impostazioni del progetto Supabase</h4>
+        <ul>
+          <li><b>Authentication → Sign In / Up</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); password minimo 8 caratteri.</li>
+          <li><b>Authentication → URL Configuration → Site URL</b>: deve essere l'indirizzo esatto dell'app pubblicata, altrimenti i link di invito rimandano al posto sbagliato.</li>
+          <li><b>Niente SMTP</b> configurato (scelta voluta): nessuna email automatica, i link si distribuiscono a mano e non ci sono limiti di invio.</li>
+          <li><b>API Keys</b>: l'app usa la <b>publishable key</b> (formato <code>sb_publishable_…</code>). Se le chiavi venissero ruotate, aggiornare <code>SUPABASE_KEY</code> in cima ad <code>app.js</code> e ripubblicare.</li>
+        </ul>
+        <h4>Pubblicare una modifica dell'app</h4>
+        <ol>
+          <li>Copia i file aggiornati (di solito <code>app.js</code>, eventualmente <code>index.html</code> e <code>style.css</code>) sull'hosting, sovrascrivendo i vecchi.</li>
+          <li>Nel browser fai un <b>refresh forzato</b> (Ctrl+F5) per scaricare la nuova versione.</li>
+        </ol>
+        <h4>Strumenti di riserva (senza Edge Function)</h4>
+        <p>Nel repository, cartella <code>migrations/</code>: <code>new-user.mjs</code> (crea un utente e stampa il link) e <code>gen-links.mjs</code> (nuovo link per un utente esistente). Si lanciano con Node dal PC dell'amministratore; i dettagli sono nel README.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>🛠 Risoluzione problemi</summary>
+      <div class="guide-body">
+        <table>
+          <tr><th>Sintomo</th><th>Causa probabile e rimedio</th></tr>
+          <tr><td>"Generazione non riuscita (401: Invalid credentials)"</td><td>Il gateway della Edge Function sta rifiutando le chiamate: verifica JWT legacy attiva o chiave sbagliata. Vedi la sezione Configurazione tecnica.</td></tr>
+          <tr><td>"Email già registrata" creando un utente</td><td>L'account esiste già: usa il bottone 🔑 per generare un link di reimpostazione.</td></tr>
+          <tr><td>Il link di invito non funziona</td><td>È scaduto (≈24h) o già usato: genera un nuovo link con 🔑.</td></tr>
+          <tr><td>Il link apre la pagina sbagliata</td><td>Site URL errata su Supabase (Authentication → URL Configuration).</td></tr>
+          <tr><td>✗ Errore sync in alto</td><td>Problema di rete o permessi: ricarica la pagina; se persiste controlla lo stato di Supabase.</td></tr>
+          <tr><td>Un operatore non vede una commessa</td><td>La commessa non è Attiva, oppure ha utenti assegnati e lui non è tra questi.</td></tr>
+          <tr><td>Ore senza valore economico nei report</td><td>Alla data della registrazione non esisteva una tariffa applicabile: crea la tariffa con la validità giusta (le nuove registrazioni la useranno; quelle vecchie restano com'erano).</td></tr>
+          <tr><td>Modifiche all'app non visibili dopo la pubblicazione</td><td>Cache del browser: refresh forzato con Ctrl+F5.</td></tr>
+        </table>
+      </div>
+    </details>
+  </div>`;
+}
+
 // ═══ PROJECT REPORT ═══
 function projectStats(p){
   const pe=db.entries.filter(e=>e.projectId===p.id&&(_a()||e.userId===currentUser.id));
@@ -873,7 +1080,7 @@ window.openProjectDetail=openProjectDetail;
 
 // ═══ MANAGE ═══
 function renderManage(){
-  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:'💰 Tariffe'},{id:'backup',l:'💾 Backup'}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
+  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:'💰 Tariffe'},{id:'backup',l:'💾 Backup'},{id:'guide',l:'📖 Guida'}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
   renderMC();
 }
 function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};renderManage()}
@@ -902,6 +1109,8 @@ function renderMC(){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
     renderBackupTab();
+  } else if(activeMgmt==='guide'){
+    renderGuideTab();
   }
 }
 

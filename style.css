@@ -228,3 +228,24 @@ tr{border-bottom:1px solid rgba(42,46,59,.08)}
 .btn-primary:hover{background:var(--accent-h)}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;transition:all .15s}
 .btn-ghost:hover{color:var(--text);border-color:var(--text-dim)}
+
+/* Guida admin (tab Gestione) */
+.guide{max-width:860px;font-size:13px;line-height:1.6}
+.guide-intro{color:var(--text-dim);margin:0 0 14px}
+.guide details{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--card);overflow:hidden}
+.guide details[open]{border-color:var(--accent)}
+.guide summary{padding:11px 16px;cursor:pointer;font-weight:600;font-size:14px;user-select:none;list-style:none;display:flex;align-items:center;gap:8px}
+.guide summary::-webkit-details-marker{display:none}
+.guide summary::after{content:"▸";margin-left:auto;color:var(--text-dim);transition:transform .15s}
+.guide details[open] summary::after{transform:rotate(90deg)}
+.guide .guide-body{padding:0 18px 16px;color:var(--text)}
+.guide h4{margin:14px 0 6px;font-size:13px;color:var(--accent)}
+.guide ul,.guide ol{margin:6px 0;padding-left:22px}
+.guide li{margin:3px 0}
+.guide code{font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+.guide .g-tip{background:rgba(46,174,109,.1);border-left:3px solid var(--green);border-radius:0 6px 6px 0;padding:8px 12px;margin:8px 0}
+.guide .g-warn{background:rgba(232,163,58,.1);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:8px 12px;margin:8px 0}
+.guide .g-danger{background:rgba(232,90,79,.1);border-left:3px solid var(--red);border-radius:0 6px 6px 0;padding:8px 12px;margin:8px 0}
+.guide table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+.guide th,.guide td{border:1px solid var(--border);padding:6px 10px;text-align:left;vertical-align:top}
+.guide th{background:var(--bg);color:var(--text-dim);font-weight:600}
