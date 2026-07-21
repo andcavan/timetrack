@@ -34,6 +34,9 @@ input,select,button,textarea{font-family:var(--font)}
 /* Header */
 #app-header{display:none;align-items:center;justify-content:space-between;padding:0 24px;height:56px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50;flex-wrap:wrap;gap:8px}
 .logo{font-weight:800;font-size:16px;color:var(--accent);display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
+/* Badge revisione: apice in alto a destra del titolo TimeTrack */
+.app-version{font-size:9px;font-weight:700;color:var(--text-dim);letter-spacing:.02em;vertical-align:super;line-height:1;margin-left:3px;align-self:flex-start;margin-top:2px}
+.login-title .app-version{font-size:11px;margin-left:4px}
 .nav{display:flex;gap:4px}
 .nav-btn{background:transparent;border:none;color:var(--text-dim);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}

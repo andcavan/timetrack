@@ -2,6 +2,66 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
+**Versione corrente: 2.1.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+
+---
+
+# Revisioni
+
+## Come si gestisce una revisione
+
+La versione ha un'unica sorgente: la costante `APP_VERSION` in `app.js` (righe iniziali).
+Il badge `v…` nell'header e nel login viene riempito da lì: **non va scritto a mano nell'HTML**.
+
+Numerazione `MAJOR.MINOR.PATCH`:
+
+| Cosa hai fatto | Cosa incrementi | Esempio |
+|---|---|---|
+| Correzione di un bug, ritocco grafico | PATCH | 2.1.0 → 2.1.1 |
+| Nuova funzione, nuovo campo, nuova vista | MINOR | 2.1.1 → 2.2.0 |
+| Cambio di schema/DB o di autenticazione che richiede una migrazione | MAJOR | 2.2.0 → 3.0.0 |
+
+**Checklist a ogni modifica dell'app** (l'ordine conta):
+
+1. Fai la modifica in `app.js` / `index.html` / `style.css` / `migrations/`.
+2. Aggiorna `APP_VERSION` in `app.js`.
+3. Aggiorna "Versione corrente" qui sopra.
+4. Aggiungi una voce nel Changelog qui sotto (data + cosa cambia per l'utente, non solo per il codice).
+5. Committa tutto insieme.
+
+> Il commit viene **bloccato** da un hook di git se modifichi i file dell'app senza toccare il README (vedi sotto): è la rete di sicurezza contro le dimenticanze.
+
+## Changelog
+
+Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [2.1.0] — 2026-07-21
+
+**Aggiunto**
+- Badge della revisione in alto a destra del titolo "TimeTrack" (header e schermata di login), alimentato dalla costante `APP_VERSION`.
+- Sezione "Revisioni" nel README con procedura di versionamento e changelog.
+- Hook git `pre-commit` che blocca i commit sui file dell'app privi di aggiornamento del README.
+
+### [2.0.0] — 2026-07-08
+
+**Sicurezza**
+- Migrazione completa a **Supabase Auth**: accesso con email + password e sessione JWT al posto dello username sul singolo blob JSON.
+- Dati normalizzati in tabelle (`profiles`, `clients`, `projects`, `activities`, `entries`, `rates`, …) protette da **Row Level Security**: l'operator vede solo le proprie ore e non riceve mai tariffe, costi o budget.
+- Costo delle ore "fotografato" da un trigger server-side (`entry_costs`), non più calcolato nel browser.
+- Script CDN pinnati con Subresource Integrity.
+- Passaggio alla **publishable key** (`sb_publishable_…`) al posto della anon key legacy.
+
+**Aggiunto**
+- Creazione utenti tramite Edge Function `invite-user` con email di invito.
+- Guida di migrazione passo passo (fasi 0–2 e rollback) in questo README.
+- Messaggi di errore e di stato più espliciti nell'interfaccia.
+
+### [1.x] — fino al 2026-07-07
+
+Versione storica su blob JSON singolo (`timetrack_data`) con login lato client. Funzioni principali maturate in questo ciclo: inserimento rapido ore, gestione commesse/clienti/attività, tariffe separate, accoppiamento commesse–utenti, export report PDF ed Excel, filtri commessa, disattivazione utente, data/ora in header, estrazione di CSS e JS in file separati.
+
+---
+
 ## Sicurezza (versione 2)
 
 - **Login con Supabase Auth** (email + password verificate lato server, sessione JWT).

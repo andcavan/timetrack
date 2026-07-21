@@ -1,0 +1,40 @@
+#!/bin/sh
+# Blocca il commit se si modificano i file dell'app senza aggiornare il README
+# (versione + changelog). Bypass di emergenza: git commit --no-verify
+#
+# Attivazione (una volta sola, dopo il clone):  git config core.hooksPath .githooks
+
+changed=$(git diff --cached --name-only)
+
+app_touched=$(echo "$changed" | grep -E '^(app\.js|index\.html|style\.css|migrations/|supabase/)' | head -1)
+readme_touched=$(echo "$changed" | grep -E '^README\.md$' | head -1)
+
+if [ -n "$app_touched" ] && [ -z "$readme_touched" ]; then
+  echo ""
+  echo "✗ COMMIT BLOCCATO — hai modificato l'app ma non il README."
+  echo ""
+  echo "  Prima di committare:"
+  echo "   1. incrementa APP_VERSION in app.js"
+  echo "   2. aggiorna 'Versione corrente' nel README"
+  echo "   3. aggiungi la voce nel Changelog (README, sezione Revisioni)"
+  echo ""
+  echo "  Se davvero non serve (es. solo refactor interno): git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+# Coerenza: se il README cita una versione diversa da APP_VERSION, avvisa.
+if [ -n "$app_touched" ] || [ -n "$readme_touched" ]; then
+  ver_js=$(grep -oE "APP_VERSION *= *'[^']+'" app.js | grep -oE "'[^']+'" | tr -d "'")
+  ver_md=$(grep -oE '\*\*Versione corrente: [0-9]+\.[0-9]+\.[0-9]+\*\*' README.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+  if [ -n "$ver_js" ] && [ -n "$ver_md" ] && [ "$ver_js" != "$ver_md" ]; then
+    echo ""
+    echo "✗ COMMIT BLOCCATO — versioni disallineate:"
+    echo "    app.js  -> $ver_js"
+    echo "    README  -> $ver_md"
+    echo ""
+    exit 1
+  fi
+fi
+
+exit 0

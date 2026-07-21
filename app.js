@@ -1,6 +1,14 @@
 // ═══ GLOBAL APP OBJECT ═══
 const App = {};
 
+// ═══ VERSIONE APPLICAZIONE ═══
+// Sorgente unica della revisione: va incrementata a ogni modifica e
+// documentata nel Changelog del README (vedi sezione "Revisioni").
+const APP_VERSION = '2.1.0';
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
+});
+
 // ═══════════════════════════════════════
 //  DATABASE (in-memory, ricomposto dalle tabelle Supabase)
 //  La sicurezza è garantita da Supabase Auth + RLS lato server:
