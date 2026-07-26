@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 2.1.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 3.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -35,6 +35,17 @@ Numerazione `MAJOR.MINOR.PATCH`:
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
 
+### [3.0.0] — 2026-07-26
+
+**Modificato**
+- I costi/ricavi delle registrazioni (`entry_costs`) ora si aggiornano automaticamente quando un admin aggiunge, modifica o elimina una tariffa, invece di restare congelati al valore calcolato al momento della registrazione: nuovo trigger su `rates` che ricalcola le registrazioni esistenti coinvolte per data e ambito (utente/cliente/commessa).
+
+**Aggiunto**
+- Azione admin "↻ Ricalcola tutte le tariffe" nella tab Tariffe (funzione `recompute_all_entry_costs`), per forzare il ricalcolo di tutte le registrazioni: utile dopo import massivi o per correggere derive pregresse a questa modifica.
+
+**Sicurezza**
+- Attenzione: modificare o eliminare una tariffa può ora cambiare i totali nei report storici già generati (comportamento corretto e voluto). I dialog di conferma di modifica/eliminazione tariffa segnalano l'effetto.
+
 ### [2.1.0] — 2026-07-21
 
 **Aggiunto**
@@ -47,7 +58,7 @@ Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modific
 **Sicurezza**
 - Migrazione completa a **Supabase Auth**: accesso con email + password e sessione JWT al posto dello username sul singolo blob JSON.
 - Dati normalizzati in tabelle (`profiles`, `clients`, `projects`, `activities`, `entries`, `rates`, …) protette da **Row Level Security**: l'operator vede solo le proprie ore e non riceve mai tariffe, costi o budget.
-- Costo delle ore "fotografato" da un trigger server-side (`entry_costs`), non più calcolato nel browser.
+- Costo delle ore calcolato e mantenuto sincronizzato da trigger server-side (`entry_costs`), non più calcolato nel browser: se una tariffa cambia, anche le registrazioni già esistenti nel suo periodo di validità vengono ricalcolate.
 - Script CDN pinnati con Subresource Integrity.
 - Passaggio alla **publishable key** (`sb_publishable_…`) al posto della anon key legacy.
 
@@ -69,7 +80,7 @@ Versione storica su blob JSON singolo (`timetrack_data`) con login lato client. 
   - un *operator* vede e modifica **solo le proprie ore**; tariffe, costi e budget € non gli vengono mai inviati;
   - un *admin* vede tutto; il ruolo è protetto lato server (nessuna auto-promozione possibile);
   - la publishable key (pubblica per progettazione) **senza sessione non accede a nulla**.
-- Le tariffe delle ore vengono "fotografate" da un trigger server-side (`entry_costs`), mai calcolate nel browser.
+- Le tariffe delle ore vengono calcolate e mantenute sincronizzate da trigger server-side (`entry_costs`), mai calcolate nel browser: la modifica/eliminazione di una tariffa ricalcola automaticamente anche le registrazioni già esistenti nel suo periodo di validità (azione admin "Ricalcola tutte le tariffe" disponibile come rete di sicurezza).
 - Script CDN pinnati con Subresource Integrity.
 
 ---

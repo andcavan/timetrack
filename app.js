@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '3.0.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -802,7 +802,7 @@ function renderGuideTab(){
           <li>Clic su una registrazione per <b>modificarla</b>; dentro la modifica trovi anche l'eliminazione.</li>
           <li>Un operatore vede e modifica solo le proprie registrazioni; un admin vede quelle di tutti.</li>
         </ul>
-        <div class="g-tip">Al momento della registrazione il server "fotografa" la tariffa in vigore per quell'utente/commessa: i report economici restano corretti anche se le tariffe cambiano in seguito.</div>
+        <div class="g-tip">Il costo/ricavo di ogni registrazione è calcolato server-side dalla tariffa in vigore per quella data/utente/cliente/commessa e resta sincronizzato: se un admin aggiunge, modifica o elimina una tariffa, gli importi delle registrazioni già esistenti nel suo periodo di validità vengono ricalcolati automaticamente.</div>
       </div>
     </details>
 
@@ -898,7 +898,7 @@ function renderGuideTab(){
           <li>Ogni tariffa ha <b>Valida dal</b> e opzionalmente <b>fino al</b>; senza data di fine è attiva. Le tariffe chiuse finiscono nello Storico.</li>
           <li>Per un aumento dal 1° gennaio: chiudi la vecchia (fino al 31/12) e creane una nuova (dal 01/01). Non modificare i valori della vecchia.</li>
         </ul>
-        <div class="g-tip">La tariffa viene <b>fotografata sulla registrazione</b> nel momento in cui l'ora viene salvata (trigger server). Cambiare o eliminare una tariffa oggi non altera il valore delle ore già registrate.</div>
+        <div class="g-tip">La tariffa applicata a ogni registrazione viene <b>calcolata e mantenuta sincronizzata dal server</b> (trigger): se aggiungi, modifichi o elimini una tariffa, gli importi delle registrazioni già esistenti nel suo periodo di validità vengono ricalcolati automaticamente — questo può cambiare i totali nei report storici già generati. Per un ricalcolo manuale di tutte le registrazioni usa il pulsante "↻ Ricalcola tutte le tariffe".</div>
       </div>
     </details>
 
@@ -958,7 +958,7 @@ function renderGuideTab(){
           <tr><td>Il link apre la pagina sbagliata</td><td>Site URL errata su Supabase (Authentication → URL Configuration).</td></tr>
           <tr><td>✗ Errore sync in alto</td><td>Problema di rete o permessi: ricarica la pagina; se persiste controlla lo stato di Supabase.</td></tr>
           <tr><td>Un operatore non vede una commessa</td><td>La commessa non è Attiva, oppure ha utenti assegnati e lui non è tra questi.</td></tr>
-          <tr><td>Ore senza valore economico nei report</td><td>Alla data della registrazione non esisteva una tariffa applicabile: crea la tariffa con la validità giusta (le nuove registrazioni la useranno; quelle vecchie restano com'erano).</td></tr>
+          <tr><td>Ore senza valore economico nei report</td><td>Alla data della registrazione non esisteva una tariffa applicabile: crea la tariffa con la validità giusta, anche retroattiva — le registrazioni già esistenti in quel periodo vengono ricalcolate automaticamente.</td></tr>
           <tr><td>Modifiche all'app non visibili dopo la pubblicazione</td><td>Cache del browser: refresh forzato con Ctrl+F5.</td></tr>
         </table>
       </div>
@@ -1146,6 +1146,7 @@ function renderRatesTab(){
     </div>
     <div class="mgmt-list">${active.map(rowHTML).join('')||'<div style="color:var(--text-dim);padding:12px 0">Nessuna tariffa attiva</div>'}</div>
     ${history.length?`<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Storico (${history.length})</summary><div class="mgmt-list" style="margin-top:8px;opacity:.7">${history.map(rowHTML).join('')}</div></details>`:''}
+    <div style="margin-top:12px"><button class="mini-btn" onclick="recalcAllRates()" title="Ricalcola i costi/ricavi di tutte le registrazioni in base alle tariffe attuali">↻ Ricalcola tutte le tariffe</button></div>
     <div class="mgmt-form" style="margin-top:16px">
       <select id="nr-user"><option value="">— Utente (tutti) —</option>${db.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
       <select id="nr-client"><option value="">— Cliente (tutti) —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
@@ -1196,14 +1197,29 @@ async function saveRateEdit(id){
     valid_from:document.getElementById('er-from').value,
     valid_to:document.getElementById('er-to').value||null
   };
+  if(!confirm('Salvare le modifiche? Verranno ricalcolati anche i costi delle registrazioni esistenti nel periodo di validità di questa tariffa.'))return;
   closeModal();
   const ok=await dbWrite(supa.from('rates').update(upd).eq('id',id),'Tariffa aggiornata');
   if(ok)renderMC();
 }
 async function delRate(id){
-  if(!confirm('Eliminare questa tariffa?'))return;
+  if(!confirm('Eliminare questa tariffa? Verranno ricalcolati anche i costi delle registrazioni esistenti nel suo periodo di validità.'))return;
   const ok=await dbWrite(supa.from('rates').delete().eq('id',id),'Eliminata');
   if(ok)renderMC();
+}
+async function recalcAllRates(){
+  if(!confirm('Ricalcola i costi/ricavi di TUTTE le registrazioni in base alle tariffe attuali. Continuare?'))return;
+  updateSyncStatus('sync');
+  const {data,error}=await supa.rpc('recompute_all_entry_costs');
+  if(error){
+    console.error('Errore ricalcolo tariffe:',error);
+    updateSyncStatus('err');
+    showToast(friendlyDbError(error),'error');
+    return;
+  }
+  try{await loadAll()}catch(e){console.error(e)}
+  showToast(`Ricalcolate ${data} registrazioni`);
+  renderMC();
 }
 
 // CRUD Clients

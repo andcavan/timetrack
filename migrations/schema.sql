@@ -152,18 +152,28 @@ begin
   o_client := coalesce(o_client, 0);
 end $$;
 
+-- Ricalcola e salva il costo/ricavo di UNA entry (helper condiviso da
+-- entries_snapshot_rates e rates_recompute_affected).
+create or replace function public.recompute_entry_cost(p_entry_id text) returns void
+language plpgsql security definer set search_path = public as $$
+declare c numeric; r numeric; e record;
+begin
+  select user_id, client_id, project_id, date into e from public.entries where id = p_entry_id;
+  if not found then return; end if;
+  select o_cost, o_client into c, r
+  from public.resolve_rates(e.user_id, e.client_id, e.project_id, e.date);
+  insert into public.entry_costs(entry_id, cost_rate, client_rate)
+  values (p_entry_id, c, r)
+  on conflict (entry_id) do update
+    set cost_rate = excluded.cost_rate, client_rate = excluded.client_rate;
+end $$;
+
 -- Snapshot tariffe su insert/update entry (server-side: gli operator
 -- non vedono mai le tariffe, ma i costi vengono comunque registrati)
 create or replace function public.snapshot_entry_rates() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare c numeric; r numeric;
 begin
-  select o_cost, o_client into c, r
-  from public.resolve_rates(new.user_id, new.client_id, new.project_id, new.date);
-  insert into public.entry_costs(entry_id, cost_rate, client_rate)
-  values (new.id, c, r)
-  on conflict (entry_id) do update
-    set cost_rate = excluded.cost_rate, client_rate = excluded.client_rate;
+  perform public.recompute_entry_cost(new.id);
   return new;
 end $$;
 
@@ -171,6 +181,75 @@ create trigger entries_snapshot_rates
   after insert or update of date, project_id, client_id, user_id
   on public.entries
   for each row execute function public.snapshot_entry_rates();
+
+-- Ricalcola entry_costs per tutte le entries potenzialmente interessate
+-- da una modifica in `rates` (insert/update/delete): stessa data range
+-- (unione OLD/NEW) e stesso ambito user/client/project (rispettando i
+-- NULL = "tutti"). Cosi' creare/modificare/eliminare una tariffa aggiorna
+-- anche le registrazioni gia' esistenti nel periodo interessato.
+create or replace function public.rates_recompute_affected() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_from date; v_to date; v_user uuid; v_client text; v_project text; r record;
+begin
+  if tg_op = 'DELETE' then
+    v_from := old.valid_from; v_to := old.valid_to;
+    v_user := old.user_id; v_client := old.client_id; v_project := old.project_id;
+  elsif tg_op = 'INSERT' then
+    v_from := new.valid_from; v_to := new.valid_to;
+    v_user := new.user_id; v_client := new.client_id; v_project := new.project_id;
+  else
+    v_from := least(old.valid_from, new.valid_from);
+    v_to := case when old.valid_to is null or new.valid_to is null then null
+                 else greatest(old.valid_to, new.valid_to) end;
+  end if;
+
+  for r in
+    select id from public.entries e
+    where e.date >= v_from and (v_to is null or e.date <= v_to)
+      and (
+        (tg_op = 'UPDATE' and (
+          ((old.user_id is null or e.user_id = old.user_id)
+           and (old.client_id is null or e.client_id = old.client_id)
+           and (old.project_id is null or e.project_id = old.project_id))
+          or
+          ((new.user_id is null or e.user_id = new.user_id)
+           and (new.client_id is null or e.client_id = new.client_id)
+           and (new.project_id is null or e.project_id = new.project_id))
+        ))
+        or
+        (tg_op <> 'UPDATE'
+          and (v_user is null or e.user_id = v_user)
+          and (v_client is null or e.client_id = v_client)
+          and (v_project is null or e.project_id = v_project))
+      )
+  loop
+    perform public.recompute_entry_cost(r.id);
+  end loop;
+
+  return coalesce(new, old);
+end $$;
+
+create trigger rates_recompute
+  after insert or update or delete on public.rates
+  for each row execute function public.rates_recompute_affected();
+
+-- Ricalcolo massivo di entry_costs per tutte le entries (funzione di
+-- servizio, admin-only): corregge derive pregresse o dopo import massivi
+-- con trigger disattivati.
+create or replace function public.recompute_all_entry_costs() returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer := 0; r record;
+begin
+  if not public.is_admin() then
+    raise exception 'Operazione riservata agli amministratori';
+  end if;
+  for r in select id from public.entries loop
+    perform public.recompute_entry_cost(r.id);
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
 
 -- Protezione campi profilo: un non-admin non può cambiare role/active/legacy_id
 -- (niente auto-promozione ad admin, nemmeno via API diretta con la anon key)
@@ -232,8 +311,10 @@ end $$;
 -- Le funzioni esposte sono eseguibili solo da utenti autenticati
 revoke all on function public.is_admin() from public, anon;
 revoke all on function public.next_project_num() from public, anon;
+revoke all on function public.recompute_all_entry_costs() from public, anon;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.next_project_num() to authenticated;
+grant execute on function public.recompute_all_entry_costs() to authenticated;
 
 -- ═══════════════════════════════════════════════════════════
 -- 3. ROW LEVEL SECURITY
