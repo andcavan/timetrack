@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 3.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 3.0.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,12 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [3.0.1] — 2026-09-12
+
+**Aggiunto**
+- Icona dell'app (orologio su fondo blu) nella scheda del browser, nei preferiti e nella cronologia: prima la scheda mostrava l'icona generica di pagina bianca. L'icona è incorporata direttamente in `index.html`, quindi non ci sono file aggiuntivi da caricare sull'hosting.
+- Colore della barra del browser su Android/Chrome allineato allo sfondo scuro dell'app (`theme-color`).
 
 ### [3.0.0] — 2026-07-26
 
