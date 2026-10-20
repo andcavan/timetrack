@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '4.0.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -22,12 +22,63 @@ let db=null,currentUser=null,currentEmail=null,currentView='timesheet',selectedW
 const _authFlowType=new URLSearchParams((location.hash||'').replace(/^#/,'')).get('type');
 
 // ═══ SUPABASE CONFIG ═══
-// La publishable key è pubblica per progettazione: senza sessione autenticata
-// le policy RLS non le concedono alcun accesso. (Sostituisce la vecchia anon
-// key legacy: il gateway delle Edge Functions accetta solo le chiavi nuove.)
-const SUPABASE_URL='https://latuujorgnaksdhxazfb.supabase.co';
-const SUPABASE_KEY='sb_publishable_xA_K9OBN3t3zUR4OBobx9A_vErdBrir';
-const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+// Come in Bomtrack, l'indirizzo del progetto e la chiave PUBBLICA non stanno
+// nel codice: il codice è lo stesso per tutti, il progetto no. Stanno in
+// localStorage su ogni dispositivo, inseriti dall'admin (schermata di accesso
+// → "Collega progetto") o arrivati con il link di collegamento
+// (…?supabase=URL&chiave=KEY). La chiave è pubblica per progettazione (anon o
+// publishable): senza sessione le policy RLS non le concedono nulla. La
+// service_role non passa mai di qui.
+const SUPA_CONFIG_KEY='tt_supabase';
+function supaConfig(){
+  try{const c=JSON.parse(localStorage.getItem(SUPA_CONFIG_KEY)||'null');return c&&c.url&&c.key?c:null}catch(e){return null}
+}
+// Indirizzo pulito: https, niente barra finale né percorso dopo il dominio
+function normalizeSupaUrl(u){
+  let s=String(u||'').trim();
+  if(s&&!/^https?:\/\//i.test(s))s='https://'+s;
+  try{return new URL(s).origin}catch(e){return ''}
+}
+function saveSupaConfig(url,key){
+  const u=normalizeSupaUrl(url),k=String(key||'').trim();
+  if(!u)throw new Error('Indirizzo del progetto non valido');
+  if(!k)throw new Error('Manca la chiave pubblica');
+  localStorage.setItem(SUPA_CONFIG_KEY,JSON.stringify({url:u,key:k}));
+}
+// Il progetto risponde con questa chiave? (endpoint pubblico di Auth)
+async function testSupaConfig(url,key){
+  const u=normalizeSupaUrl(url);
+  if(!u)throw new Error('Indirizzo del progetto non valido');
+  let r;
+  try{r=await fetch(u+'/auth/v1/settings',{headers:{apikey:String(key||'').trim()}})}
+  catch(e){throw new Error('Server non raggiungibile: controlla l\'indirizzo')}
+  if(r.status===401||r.status===403)throw new Error('Chiave rifiutata dal progetto');
+  if(!r.ok)throw new Error('Il progetto risponde con un errore (HTTP '+r.status+')');
+}
+// Il link di collegamento porta indirizzo e chiave pubblica: chi lo apre si
+// ritrova l'app già puntata al progetto. È anche il ritorno dei link di
+// invito/recovery, così chi apre l'invito su un PC nuovo è già collegato.
+function connectionLink(c){
+  c=c||supaConfig();if(!c)return '';
+  const base=/^https?:/.test(location.protocol)?location.origin+location.pathname:location.href.split(/[?#]/)[0];
+  return base+'?supabase='+encodeURIComponent(c.url)+'&chiave='+encodeURIComponent(c.key);
+}
+// Link di collegamento nell'indirizzo: si chiede conferma (un link può
+// puntare l'app a un server qualsiasi) e si toglie dalla barra degli
+// indirizzi. Il fragment (#access_token=… di un invito) resta dov'è.
+(function readConnectionLinkFromUrl(){
+  const q=new URLSearchParams(location.search||'');
+  const url=q.get('supabase'),key=q.get('chiave');
+  if(!url||!key)return;
+  try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}
+  const c=supaConfig();
+  if(c&&c.url===normalizeSupaUrl(url)&&c.key===key)return;
+  let host=url;try{host=new URL(normalizeSupaUrl(url)).host}catch(e){}
+  if(!confirm(`Collegare TimeTrack su questo dispositivo al progetto Supabase ${host}?`))return;
+  try{saveSupaConfig(url,key);localStorage.removeItem('tt_saved_email')}catch(e){alert(e.message)}
+})();
+const _supaCfg=supaConfig();
+const supa=_supaCfg?window.supabase.createClient(_supaCfg.url,_supaCfg.key):null;
 
 function updateSyncStatus(status){
   const el=document.getElementById('sync-status');
@@ -148,6 +199,13 @@ function closeModal(){document.getElementById('modal-root').innerHTML=''}
 
 // ═══ AUTH (Supabase Auth: email + password verificate lato server) ═══
 function renderLogin(){
+  // La riga sotto il modulo dice a quale progetto è collegato il dispositivo
+  const lp=document.getElementById('login-project');
+  const cfg=supaConfig();
+  if(lp)lp.innerHTML=cfg
+    ?`Progetto: ${esc(new URL(cfg.url).host)} · <a onclick="disconnectSupa()">Cambia</a>`
+    :`Nessun progetto Supabase collegato · <a onclick="showSupaConnectModal()">Collega progetto</a>`;
+  if(!cfg){showSupaConnectModal();return}
   const saved=localStorage.getItem('tt_saved_email');
   if(saved){
     const el=document.getElementById('login-username');
@@ -166,6 +224,7 @@ function _loginError(msg){
 }
 
 async function submitLogin(){
+  if(!supa){showSupaConnectModal();return}
   const email=document.getElementById('login-username').value.trim();
   const password=document.getElementById('login-password').value;
   const errEl=document.getElementById('login-error');
@@ -324,6 +383,12 @@ async function submitSetPwd(){
   await initSession();
 }
 
+// Dove riportano i link di invito/recovery generati dalla Edge Function: il
+// link di collegamento, così il PC di chi lo apre si collega da sé. Va
+// ammesso fra i Redirect URLs del progetto (indirizzo dell'app seguito da
+// **); altrimenti Supabase usa il Site URL.
+function appReturnUrl(){return /^https?:/.test(location.protocol)?connectionLink()||undefined:undefined}
+
 // Estrae un messaggio leggibile dagli errori di supa.functions.invoke:
 // la nostra funzione risponde {error}, il gateway Supabase {code,message}
 async function fnErrorMessage(error,fallback){
@@ -348,13 +413,56 @@ async function resetUserPassword(uid){
   if(!u)return;
   if(!u.email||!u.email.includes('@')){showToast('Utente senza email','error');return}
   if(!confirm(`Generare un link di reimpostazione password per ${u.name} (${u.email})?`))return;
-  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',email:u.email}});
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',id:u.id,redirect:appReturnUrl()}});
   if(error){
     console.error(error);
     showToast(await fnErrorMessage(error,'Generazione non riuscita'),'error');
     return;
   }
   showInviteLinkModal(`Link per ${esc(u.name)}`,data.link);
+}
+
+// ═══ COLLEGAMENTO AL PROGETTO SUPABASE ═══
+function showSupaConnectModal(){
+  openModal(`<h3>🔌 Collega il progetto Supabase</h3>
+    <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Il modo più semplice è aprire il <b>link di collegamento</b> che ti manda l'amministratore. In alternativa inserisci i dati del progetto: li trovi nel Dashboard Supabase in <b>Project Settings → API Keys</b>. La chiave è quella <b>pubblica</b> (<code>sb_publishable_…</code> o anon), mai la service_role.</p>
+    <div class="modal-field"><label>Indirizzo del progetto</label><input id="sc-url" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+    <div class="modal-field"><label>Chiave pubblica</label><input id="sc-key" placeholder="sb_publishable_…" autocomplete="off"></div>
+    <div id="sc-msg" style="font-size:13px;display:none;margin-bottom:8px"></div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="btn-outline" onclick="submitSupaConnect(false)">Prova</button><button class="add-btn-sm" onclick="submitSupaConnect(true)">Collega</button></div>`);
+  setTimeout(()=>document.getElementById('sc-url')?.focus(),50);
+}
+async function submitSupaConnect(save){
+  const url=document.getElementById('sc-url').value,key=document.getElementById('sc-key').value;
+  const msg=document.getElementById('sc-msg');
+  const say=(t,bad)=>{msg.textContent=t;msg.style.color=bad?'var(--red)':'var(--green)';msg.style.display='block'};
+  say('Prova in corso…');
+  try{await testSupaConfig(url,key)}catch(e){say(e.message,true);return}
+  if(!save){say('Il progetto risponde: puoi collegarlo.');return}
+  try{saveSupaConfig(url,key)}catch(e){say(e.message,true);return}
+  localStorage.removeItem('tt_saved_email');
+  location.reload();
+}
+// Scollega il dispositivo: esce dall'account e dimentica il progetto. Su
+// questo dispositivo non resta nessun dato: le ore stanno sul server.
+async function disconnectSupa(){
+  if(!confirm('Scollegare questo dispositivo dal progetto Supabase? Dovrai ricollegarlo (link di collegamento o dati del progetto) per accedere di nuovo.'))return;
+  try{if(supa)await supa.auth.signOut({scope:'local'})}catch(e){console.error(e)}
+  localStorage.removeItem(SUPA_CONFIG_KEY);
+  localStorage.removeItem('tt_saved_email');
+  location.reload();
+}
+// Solo admin: il link da girare ai colleghi per collegare i loro dispositivi
+function showConnectionLinkModal(){
+  if(!_a())return;
+  openModal(`<h3>🔗 Link di collegamento</h3>
+    <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Chi apre questo link si ritrova TimeTrack già collegato a questo progetto Supabase, poi accede con la sua email e password. Contiene solo la chiave <b>pubblica</b>: non è un segreto, a proteggere i dati sono le policy.</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="il-link" readonly value="${esc(connectionLink())}" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
+      <button class="add-btn-sm" onclick="copyInviteLink()">📋 Copia</button>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin:12px 0 0">Mettilo anche in Supabase come <b>Site URL</b> (Authentication → URL Configuration), e aggiungi fra i <b>Redirect URLs</b> l'indirizzo dell'app seguito da <code>**</code>: così inviti e reimpostazioni password tornano qui già collegati.</p>
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Chiudi</button></div>`);
 }
 
 // ═══ HEADER ═══
@@ -922,20 +1030,22 @@ function renderGuideTab(){
         <ul>
           <li><b>Frontend</b>: 3 file statici (<code>index.html</code>, <code>app.js</code>, <code>style.css</code>) pubblicati su hosting semplice; librerie da CDN con integrità verificata (SRI).</li>
           <li><b>Backend</b>: progetto Supabase — Auth, Postgres con RLS, Realtime, e la Edge Function <code>invite-user</code>.</li>
-          <li><b>Schema e procedura completa</b>: nel repository, <code>migrations/schema.sql</code> e <code>README.md</code>.</li>
+          <li><b>Schema e procedura completa</b>: nel repository, <code>supabase/schema.sql</code> (si può rieseguire a ogni versione) e <code>README.md</code>.</li>
         </ul>
         <h4>Edge Function invite-user</h4>
         <ul>
           <li>Crea gli utenti e genera i link di invito/reimpostazione usando la chiave <code>service_role</code>, che non può stare nel browser: per questo gira sul server Supabase. Verifica da sola che il chiamante sia un admin attivo.</li>
+          <li>Il ruolo del nuovo utente non passa dai metadata dell'account: il profilo nasce operatore sospeso e la funzione lo completa con il token dell'admin. Un account creato a mano nel Dashboard resta quindi <b>sospeso</b> finché un admin non lo riattiva da Gestione → Utenti.</li>
           <li>Il sorgente è nel repository: <code>supabase/functions/invite-user/index.ts</code>. Per (ri)pubblicarla: Dashboard → Edge Functions → invite-user → Code → incolla <b>tutto</b> il file → Deploy.</li>
         </ul>
         <div class="g-warn"><b>Due errori già capitati, da non ripetere:</b><br>1) La verifica JWT del gateway ("Verify JWT with legacy secret") deve restare <b>disattivata</b> (scheda Settings della funzione e spunta nel dialogo di deploy): il progetto usa le nuove API keys e la verifica legacy respingerebbe ogni chiamata con <code>401 INVALID_CREDENTIALS</code>.<br>2) Se dopo un deploy i link non funzionano e l'errore è generico, controlla di non aver pubblicato il <b>codice di esempio</b> dell'editor al posto del file vero.</div>
         <h4>Impostazioni del progetto Supabase</h4>
         <ul>
           <li><b>Authentication → Sign In / Up</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); password minimo 8 caratteri.</li>
-          <li><b>Authentication → URL Configuration → Site URL</b>: deve essere l'indirizzo esatto dell'app pubblicata, altrimenti i link di invito rimandano al posto sbagliato.</li>
+          <li><b>Authentication → URL Configuration → Site URL</b>: il <b>link di collegamento</b> (Gestione → Utenti → 🔗), cioè l'indirizzo esatto dell'app con il progetto: è dove atterrano i link quando non ne è indicato un altro.</li>
           <li><b>Niente SMTP</b> configurato (scelta voluta): nessuna email automatica, i link si distribuiscono a mano e non ci sono limiti di invio.</li>
-          <li><b>API Keys</b>: l'app usa la <b>publishable key</b> (formato <code>sb_publishable_…</code>). Se le chiavi venissero ruotate, aggiornare <code>SUPABASE_KEY</code> in cima ad <code>app.js</code> e ripubblicare.</li>
+          <li><b>Progetto e chiave non stanno nel codice</b> (come in Bomtrack): ogni dispositivo li tiene per sé, inseriti dalla schermata di accesso ("Collega progetto") o arrivati con il <b>link di collegamento</b> (Gestione → Utenti → 🔗). Lo stesso <code>app.js</code> funziona così con progetti Supabase diversi. L'app usa la chiave <b>pubblica</b> (<code>sb_publishable_…</code>); se venisse ruotata, ogni dispositivo va ricollegato con il nuovo link.</li>
+          <li><b>Redirect URLs</b>: l'indirizzo dell'app seguito da <code>**</code> (es. <code>https://tuodominio.it/timetrack/**</code>), perché i link di invito tornano al link di collegamento.</li>
         </ul>
         <h4>Pubblicare una modifica dell'app</h4>
         <ol>
@@ -1112,7 +1222,7 @@ function renderMC(){
   } else if(activeMgmt==='project'){
     el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">🔗 Link di collegamento</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1309,7 +1419,7 @@ async function submitNewUser(){
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){showErr('Email non valida');return}
   const btn=document.getElementById('nu-submit');
   btn.disabled=true;btn.textContent='Creazione...';
-  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role}});
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role,redirect:appReturnUrl()}});
   if(error){
     btn.disabled=false;btn.textContent='Crea e genera link';
     showErr(await fnErrorMessage(error,'Creazione non riuscita'));
@@ -1737,6 +1847,13 @@ function updateHeaderClock(){
   // in localStorage — rimuovi ogni residuo dai dispositivi
   ['timetrack_v5','timetrack_v5_pending','timetrack_v5_savedAt','timetrack_backups','timetrack_last_backup','tt_saved_username']
     .forEach(k=>localStorage.removeItem(k));
+
+  // Nessun progetto collegato su questo dispositivo: si collega prima
+  if(!supa){
+    updateSyncStatus('off');
+    renderLogin();
+    return;
+  }
 
   // Link di recovery (email "reimposta password"): mostra la schermata dedicata
   supa.auth.onAuthStateChange((event)=>{

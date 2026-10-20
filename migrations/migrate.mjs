@@ -88,16 +88,22 @@ async function insertAll(table, rows) {
   const { data: existingProfiles } = await supa.from('profiles').select('id, legacy_id');
   const existingByLegacy = Object.fromEntries((existingProfiles || []).filter(p => p.legacy_id).map(p => [p.legacy_id, p.id]));
 
-  for (const u of db.users || []) {
+  // Gli admin per primi: su un progetto vuoto il primo profilo nasce admin
+  // (handle_new_user), e la guardia non lascia declassare l'ultimo admin.
+  const usersAdminFirst = [...(db.users || [])].sort((a, b) => (b.role === 'admin') - (a.role === 'admin'));
+  for (const u of usersAdminFirst) {
     if (existingByLegacy[u.id]) {
       idMap[u.id] = existingByLegacy[u.id];
       console.log(`  = utente già migrato: ${u.username || u.name}`);
       continue;
     }
-    const meta = {
-      name: u.name, username: u.username || '', role: u.role || 'operator',
+    // Nei metadata solo il nome: ruolo e stato non passano mai di lì
+    // (handle_new_user crea il profilo operator sospeso), si scrivono sotto.
+    const meta = { name: u.name };
+    const profile = {
+      name: u.name, username: u.username || null, role: u.role === 'admin' ? 'admin' : 'operator',
       color: /^#[0-9A-Fa-f]{6}$/.test(u.color || '') ? u.color : '#3A7BE8',
-      legacy_id: u.id
+      legacy_id: u.id, active: u.active !== false
     };
     const hasEmail = u.email && u.email.includes('@');
     if (DRY) {
@@ -130,10 +136,10 @@ async function insertAll(table, rows) {
       tempPasswords.push({ user: u.name, email, tempPwd });
       console.log(`  ✓ account creato: ${email} (password temporanea, vedi report finale)`);
     }
-    // se l'utente era sospeso, ripristina active=false (il trigger crea active=true)
-    if (u.active === false) {
-      const { error } = await supa.from('profiles').update({ active: false }).eq('id', idMap[u.id]);
-      if (error) die(`sospensione profilo ${u.name}`, error);
+    // completa il profilo: con la service_role la guardia non scatta
+    {
+      const { error } = await supa.from('profiles').update(profile).eq('id', idMap[u.id]);
+      if (error) die(`profilo ${u.name}`, error);
     }
   }
 

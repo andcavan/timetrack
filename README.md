@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 3.0.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -23,7 +23,7 @@ Numerazione `MAJOR.MINOR.PATCH`:
 
 **Checklist a ogni modifica dell'app** (l'ordine conta):
 
-1. Fai la modifica in `app.js` / `index.html` / `style.css` / `migrations/`.
+1. Fai la modifica in `app.js` / `index.html` / `style.css` / `migrations/` / `supabase/`.
 2. Aggiorna `APP_VERSION` in `app.js`.
 3. Aggiorna "Versione corrente" qui sopra.
 4. Aggiungi una voce nel Changelog qui sotto (data + cosa cambia per l'utente, non solo per il codice).
@@ -34,6 +34,28 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.0.0] — 2026-10-20
+
+Gestione Supabase allineata a quella di Bomtrack. **Richiede un aggiornamento del database e della Edge Function**: vedi "Aggiornare Supabase alla 4.0.0" più sotto.
+
+**Sicurezza**
+- Il ruolo di un nuovo utente non arriva più dai metadata dell'account Auth (che chi si registra può scrivere da sé): il profilo nasce **operatore sospeso** e ruolo, username, colore e stato li assegna l'admin. Anche una registrazione pubblica lasciata aperta per sbaglio nel Dashboard non dà accesso a nulla. Unica eccezione: il primissimo utente di un progetto vuoto diventa admin.
+- Un account sospeso non legge più clienti, commesse, attività, ore né gli altri profili (prima poteva leggerli passando dall'API): vede solo il proprio profilo, e l'app gli dice "Account sospeso".
+- Un non-admin non può cambiare la propria **email** di profilo (oltre a ruolo e stato, come già prima).
+- Deve restare sempre almeno un **amministratore attivo**: l'ultimo non si declassa, non si sospende e non si elimina, nemmeno cancellandolo dal Dashboard.
+- Le funzioni interne del calcolo tariffe e dei trigger non sono più chiamabili dall'API: prima un operatore poteva leggere le tariffe chiamando `resolve_rates` direttamente.
+- Il vecchio archivio `timetrack_data` della 1.x non è più leggibile né scrivibile con la chiave pubblica (la policy "Allow all operations" era rimasta attiva, e l'archivio contiene anche gli hash delle vecchie password). La tabella resta, consultabile dal Dashboard.
+- Link di reimpostazione password generati per id utente, con l'email presa dall'account di accesso; non si può più generare il link di un **altro admin** (con quel link si entrerebbe al suo posto).
+
+**Modificato**
+- **L'app non è più legata a un progetto Supabase**: indirizzo e chiave pubblica non stanno più in `app.js` ma su ogni dispositivo, come in Bomtrack. Lo stesso `app.js` si può quindi pubblicare per progetti Supabase diversi. Un dispositivo si collega aprendo il **link di collegamento** (Gestione → Utenti → 🔗 Link di collegamento), oppure dalla schermata di accesso con "Collega progetto", inserendo indirizzo e chiave pubblica. "Cambia" sotto il modulo di accesso lo scollega.
+- Lo schema si sposta da `migrations/schema.sql` a `supabase/schema.sql` e si può **rieseguire** a ogni versione: crea solo ciò che manca, sostituisce funzioni, trigger e policy, non tocca i dati.
+- I link di invito e di reimpostazione riportano al link di collegamento: chi apre l'invito su un dispositivo nuovo si ritrova già collegato al progetto giusto.
+- Un account creato a mano dal Dashboard Supabase resta sospeso finché un admin non lo riattiva da Gestione → Utenti.
+
+**Aggiunto**
+- Test automatici dello schema su un Postgres vero (`test/schema.test.mjs`) e verifica a ogni push su GitHub (`.github/workflows/test.yml`): RLS, guardie sui profili, ricalcolo dei costi, riesecuzione dello schema.
 
 ### [3.0.1] — 2026-09-12
 
@@ -91,6 +113,28 @@ Versione storica su blob JSON singolo (`timetrack_data`) con login lato client. 
 
 ---
 
+# Aggiornare Supabase alla 4.0.0
+
+Da fare una volta, nell'ordine, quando si pubblica la 4.0.0:
+
+1. **Schema**: Dashboard → SQL Editor → New query → incolla tutto `supabase/schema.sql` → Run. Il risultato atteso è lo stesso del punto 0.3 (9 righe con `rowsecurity = true`). Si può rieseguire: non tocca i dati.
+2. **Edge Function**: Dashboard → Edge Functions → `invite-user` → Code → incolla tutto `supabase/functions/invite-user/index.ts` → Deploy (verifica JWT sempre disattivata, vedi 2.2.1).
+3. **Pubblica** `app.js`, `index.html` e `style.css` sull'hosting.
+4. **Collega i dispositivi** (una volta per ognuno): apri l'app, scegli "Collega progetto" e inserisci l'indirizzo del progetto e la chiave pubblica (Dashboard → Project Settings → API Keys). Poi accedi da admin, vai in Gestione → Utenti → 🔗 **Link di collegamento**, copia il link e giralo ai colleghi: aprendolo hanno l'app già collegata. Il link ha questa forma: `https://tuodominio.it/timetrack/?supabase=https://xxxx.supabase.co&chiave=sb_publishable_…`
+5. **URL Configuration** (Authentication → URL Configuration): metti il link di collegamento come **Site URL**, e fra i **Redirect URLs** aggiungi l'indirizzo dell'app seguito da `**` (es. `https://tuodominio.it/timetrack/**`).
+
+> Fai i passi di seguito. Nel frattempo: con lo schema nuovo e la Edge Function vecchia, un utente creato dall'app nasce operatore sospeso (si sistema da Gestione → Utenti); con la Edge Function nuova e il vecchio `app.js`, il bottone 🔑 risponde "Email non valida" finché non pubblichi `app.js`.
+
+## Come è organizzato Supabase (come in Bomtrack)
+
+- **Il progetto non sta nel codice**: indirizzo e chiave pubblica sono in `localStorage` su ogni dispositivo (`tt_supabase`), arrivati con il link di collegamento (`?supabase=…&chiave=…`) o inseriti a mano. Per un nuovo progetto Supabase basta eseguire lo schema, pubblicare la Edge Function, creare il primo utente dal Dashboard (diventa admin) e collegare i dispositivi.
+- `supabase/schema.sql` — l'unica fonte dello schema: tabelle, funzioni, trigger, RLS, Realtime. Rieseguibile.
+- `supabase/functions/invite-user/` — la Edge Function per creare utenti e generare link, con la service_role che non passa mai dal browser.
+- `test/schema.test.mjs` + `test/supabase-stub.sql` — lo schema caricato in un Postgres vero, con le chiamate fatte come un utente dell'app. In locale: `TIMETRACK_PG="host=localhost user=postgres" node --test test/schema.test.mjs` (senza la variabile i test si dichiarano saltati).
+- `migrations/` — gli script Node della migrazione storica dalla 1.x e gli strumenti di riserva (`new-user.mjs`, `gen-links.mjs`).
+
+---
+
 # Guida alla migrazione passo passo
 
 > **Tempo richiesto:** Fase 0 quando vuoi, senza fretta (la vecchia app continua a funzionare).
@@ -121,12 +165,12 @@ Comunica a tutti, con qualche giorno di anticipo:
 
 1. Apri il [Dashboard Supabase](https://supabase.com/dashboard) → il tuo progetto.
 2. Menu a sinistra → **SQL Editor** → **New query**.
-3. Apri il file `migrations/schema.sql` in VS Code, seleziona tutto (`Ctrl+A`), copia (`Ctrl+C`).
+3. Apri il file `supabase/schema.sql` in VS Code, seleziona tutto (`Ctrl+A`), copia (`Ctrl+C`).
 4. Incolla nel SQL Editor (`Ctrl+V`) e premi **Run** (o `Ctrl+Invio`).
 5. **Risultato atteso:** in fondo compare una tabella con 9 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`) tutte con `rowsecurity = true`.
 
 > Le nuove tabelle convivono con la vecchia `timetrack_data`: la vecchia app continua a funzionare come prima.
-> Se rilanci lo script per errore, l'unico messaggio ignorabile è *"already member of publication"*; gli errori *"already exists"* indicano che le tabelle ci sono già (va bene così).
+> Lo script si può rilanciare: crea solo ciò che manca e non tocca i dati.
 
 ### 0.4 Configura l'autenticazione nel Dashboard
 

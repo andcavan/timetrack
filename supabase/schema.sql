@@ -1,8 +1,13 @@
 -- ============================================================
 --  TimeTrack — Schema normalizzato + Supabase Auth + RLS reale
---  Eseguire nel SQL Editor del progetto Supabase (una volta sola).
---  Le nuove tabelle convivono con la vecchia `timetrack_data`,
---  che resta intoccata fino a fine migrazione.
+--  Eseguire nel SQL Editor del progetto Supabase. Si può RIESEGUIRE
+--  a ogni nuova versione: tabelle e indici si creano solo se mancano,
+--  funzioni, trigger e policy si sostituiscono. I dati restano.
+--  Le tabelle convivono con la vecchia `timetrack_data`, che non
+--  viene toccata.
+--  test/schema.test.mjs carica questo file in un Postgres vero
+--  (con test/supabase-stub.sql al posto di Supabase) e ne prova le
+--  regole: RLS, guardie sui profili, ricalcolo dei costi.
 --
 --  DOPO questo script, nel Dashboard:
 --   1. Authentication → Sign In / Up → disabilitare "Allow new users to sign up"
@@ -10,6 +15,8 @@
 --   3. Authentication → URL Configuration → Site URL = URL dell'app
 --      (serve per i link di invito/recovery)
 -- ============================================================
+
+set client_min_messages = warning;   -- i «drop … if exists» di una riesecuzione non sono notizie
 
 -- ═══════════════════════════════════════════════════════════
 -- 1. TABELLE
@@ -19,7 +26,7 @@
 -- ═══════════════════════════════════════════════════════════
 
 -- PROFILES (1:1 con auth.users)
-create table public.profiles (
+create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
   name       text not null,
   username   text unique,
@@ -31,7 +38,7 @@ create table public.profiles (
 );
 
 -- CLIENTS
-create table public.clients (
+create table if not exists public.clients (
   id        text primary key default gen_random_uuid()::text,
   name      text not null,
   referente text default '',
@@ -40,7 +47,7 @@ create table public.clients (
 );
 
 -- PROJECTS
-create table public.projects (
+create table if not exists public.projects (
   id             text primary key default gen_random_uuid()::text,
   client_id      text not null references public.clients(id) on delete cascade,
   name           text not null,
@@ -51,24 +58,24 @@ create table public.projects (
   deadline       date,
   assigned_users uuid[] not null default '{}'   -- vuoto = visibile a tutti
 );
-create index projects_client_idx on public.projects(client_id);
+create index if not exists projects_client_idx on public.projects(client_id);
 
 -- Budget € separato: leggibile solo dagli admin
-create table public.project_finance (
+create table if not exists public.project_finance (
   project_id text primary key references public.projects(id) on delete cascade,
   budget     numeric not null default 0
 );
 
 -- ACTIVITIES
-create table public.activities (
+create table if not exists public.activities (
   id         text primary key default gen_random_uuid()::text,
   project_id text not null references public.projects(id) on delete cascade,
   name       text not null
 );
-create index activities_project_idx on public.activities(project_id);
+create index if not exists activities_project_idx on public.activities(project_id);
 
 -- RATES (user/client/project null = "tutti"; risoluzione a priorità)
-create table public.rates (
+create table if not exists public.rates (
   id          text primary key default gen_random_uuid()::text,
   user_id     uuid references public.profiles(id) on delete cascade,
   client_id   text references public.clients(id) on delete cascade,
@@ -80,7 +87,7 @@ create table public.rates (
 );
 
 -- ENTRIES (senza colonne costo: quelle stanno in entry_costs, admin-only)
-create table public.entries (
+create table if not exists public.entries (
   id          text primary key default gen_random_uuid()::text,
   user_id     uuid not null references public.profiles(id) on delete cascade,
   client_id   text not null references public.clients(id) on delete cascade,
@@ -91,19 +98,19 @@ create table public.entries (
   note        text default '',
   created_at  timestamptz not null default now()
 );
-create index entries_user_date_idx on public.entries(user_id, date);
-create index entries_project_idx on public.entries(project_id);
-create index entries_date_idx on public.entries(date);
+create index if not exists entries_user_date_idx on public.entries(user_id, date);
+create index if not exists entries_project_idx on public.entries(project_id);
+create index if not exists entries_date_idx on public.entries(date);
 
 -- Snapshot tariffe per entry: leggibile SOLO da admin, scritto solo dal trigger
-create table public.entry_costs (
+create table if not exists public.entry_costs (
   entry_id    text primary key references public.entries(id) on delete cascade,
   cost_rate   numeric not null default 0,
   client_rate numeric not null default 0
 );
 
 -- Impostazioni applicative (contatore codici commessa) — solo admin
-create table public.app_settings (
+create table if not exists public.app_settings (
   key   text primary key,
   value text not null
 );
@@ -119,6 +126,16 @@ language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'admin' and active
+  );
+$$;
+
+-- Profilo attivo: un account sospeso (o appena nato, vedi profilo_crea)
+-- non legge né scrive nulla, a parte il proprio profilo.
+create or replace function public.is_active() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and active
   );
 $$;
 
@@ -177,6 +194,7 @@ begin
   return new;
 end $$;
 
+drop trigger if exists entries_snapshot_rates on public.entries;
 create trigger entries_snapshot_rates
   after insert or update of date, project_id, client_id, user_id
   on public.entries
@@ -230,6 +248,7 @@ begin
   return coalesce(new, old);
 end $$;
 
+drop trigger if exists rates_recompute on public.rates;
 create trigger rates_recompute
   after insert or update or delete on public.rates
   for each row execute function public.rates_recompute_affected();
@@ -251,44 +270,95 @@ begin
   return n;
 end $$;
 
--- Protezione campi profilo: un non-admin non può cambiare role/active/legacy_id
--- (niente auto-promozione ad admin, nemmeno via API diretta con la anon key)
-create or replace function public.protect_profile_fields() returns trigger
-language plpgsql security definer set search_path = public as $$
+-- Protezione campi profilo. Chi passa dall'app o dall'API (ruoli
+-- `authenticated`/`anon`) e non è admin non cambia ruolo, stato, email,
+-- legacy_id né id: niente auto-promozione ad admin. Dal SQL Editor e con la
+-- service_role (script in migrations/, Edge Function) il controllo non vale:
+-- lì auth.uid() è nullo e l'amministratore del progetto deve poter
+-- rimettere a posto un profilo. L'email è dell'account di accesso: il link
+-- di reimpostazione parte da auth.users, e un'email del profilo cambiata a
+-- mano farebbe credere all'app di parlare con un altro.
+-- L'ultimo admin attivo non si declassa e non si sospende, da nessuna parte.
+drop trigger if exists profiles_protect on public.profiles;
+drop function if exists public.protect_profile_fields();
+-- Niente security definer qui: il controllo legge current_user, che dentro
+-- una funzione security definer sarebbe sempre il proprietario.
+create or replace function public.profiles_guardia() returns trigger
+language plpgsql set search_path = public as $$
 begin
-  if not public.is_admin() then
-    if new.role is distinct from old.role
-       or new.active is distinct from old.active
-       or new.legacy_id is distinct from old.legacy_id then
+  -- if annidati: Postgres non garantisce l'ordine di valutazione di un `and`,
+  -- e is_admin() non è eseguibile da tutti i ruoli
+  if current_user in ('authenticated', 'anon') then
+    if (new.role is distinct from old.role
+        or new.active is distinct from old.active
+        or new.legacy_id is distinct from old.legacy_id
+        or new.email is distinct from old.email
+        or new.id <> old.id)
+       and not public.is_admin() then
       raise exception 'Campo protetto: modificabile solo da un amministratore';
     end if;
   end if;
+  if old.role = 'admin' and old.active
+     and (new.role is distinct from 'admin' or not new.active)
+     and not exists (select 1 from public.profiles p
+                     where p.id <> old.id and p.role = 'admin' and p.active) then
+    raise exception 'Deve restare almeno un amministratore attivo';
+  end if;
   return new;
 end $$;
+drop trigger if exists profiles_guardia on public.profiles;
+create trigger profiles_guardia before update on public.profiles
+  for each row execute function public.profiles_guardia();
 
-create trigger profiles_protect before update on public.profiles
-  for each row execute function public.protect_profile_fields();
+-- E non si elimina: né dall'API né cancellando il suo utente nel Dashboard
+-- (Authentication → Users), che porta via il profilo con sé.
+create or replace function public.profiles_ultimo_admin() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.role = 'admin' and old.active
+     and not exists (select 1 from public.profiles p
+                     where p.id <> old.id and p.role = 'admin' and p.active) then
+    raise exception 'Deve restare almeno un amministratore attivo';
+  end if;
+  return old;
+end $$;
+drop trigger if exists profiles_ultimo_admin on public.profiles;
+create trigger profiles_ultimo_admin before delete on public.profiles
+  for each row execute function public.profiles_ultimo_admin();
 
--- Auto-creazione profilo alla creazione dell'utente auth
--- (i metadata role/name/... sono impostati SOLO dallo script di migrazione
---  o dal Dashboard con service_role; il signup pubblico va disabilitato)
+-- Auto-creazione profilo alla creazione dell'utente auth.
+-- Ruolo e stato NON arrivano dai metadata dell'utente (chiunque si registri
+-- li può scrivere): il profilo nasce operator SOSPESO, e ruolo, username,
+-- colore e stato li assegna poi un admin (dall'app o dalla Edge Function
+-- invite-user, con il suo token). Così anche una registrazione pubblica
+-- lasciata aperta per sbaglio nel Dashboard non apre i dati a nessuno.
+-- Unica eccezione: il primissimo profilo diventa admin attivo (è l'utente
+-- creato a mano nel Dashboard su un progetto nuovo).
+create or replace function public.profilo_crea(uid uuid, mail text, nome text)
+returns void language plpgsql security definer set search_path = public as $$
+declare primo boolean;
+begin
+  primo := not exists (select 1 from public.profiles);
+  insert into public.profiles(id, name, email, role, active)
+  values (
+    uid,
+    coalesce(nullif(nome, ''), split_part(coalesce(mail, ''), '@', 1)),
+    coalesce(mail, ''),
+    case when primo then 'admin' else 'operator' end,
+    primo
+  )
+  on conflict (id) do nothing;
+end $$;
+revoke all on function public.profilo_crea(uuid, text, text) from public, anon, authenticated;
+
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles(id, name, username, email, role, color, legacy_id)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data->>'name', new.email),
-    nullif(new.raw_user_meta_data->>'username',''),
-    coalesce(new.email, ''),
-    coalesce(new.raw_user_meta_data->>'role', 'operator'),
-    coalesce(nullif(new.raw_user_meta_data->>'color',''), '#3A7BE8'),
-    nullif(new.raw_user_meta_data->>'legacy_id','')
-  )
-  on conflict (id) do nothing;
+  perform public.profilo_crea(new.id, new.email, new.raw_user_meta_data->>'name');
   return new;
 end $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
@@ -310,9 +380,23 @@ end $$;
 
 -- Le funzioni esposte sono eseguibili solo da utenti autenticati
 revoke all on function public.is_admin() from public, anon;
+revoke all on function public.is_active() from public, anon;
 revoke all on function public.next_project_num() from public, anon;
 revoke all on function public.recompute_all_entry_costs() from public, anon;
+-- Funzioni interne (trigger e calcolo tariffe): security definer, quindi
+-- chiamarle via /rest/v1/rpc/… scavalcherebbe la RLS. resolve_rates() in
+-- particolare restituirebbe le tariffe a un operator. Le usano solo i
+-- trigger e le altre funzioni security definer, che non hanno bisogno del
+-- grant.
+revoke all on function public.resolve_rates(uuid, text, text, date) from public, anon, authenticated;
+revoke all on function public.recompute_entry_cost(text) from public, anon, authenticated;
+revoke all on function public.snapshot_entry_rates() from public, anon, authenticated;
+revoke all on function public.rates_recompute_affected() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.profiles_ultimo_admin() from public, anon, authenticated;
+revoke all on function public.profiles_guardia() from public, anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_active() to authenticated;
 grant execute on function public.next_project_num() to authenticated;
 grant execute on function public.recompute_all_entry_costs() to authenticated;
 
@@ -331,74 +415,114 @@ alter table public.entries         enable row level security;
 alter table public.entry_costs     enable row level security;
 alter table public.app_settings    enable row level security;
 
+-- Il vecchio blob della 1.x (se c'è ancora): resta come archivio, ma la
+-- chiave pubblica non deve più leggerlo né scriverlo (conteneva anche gli
+-- hash delle password). Lo legge solo chi entra dal Dashboard.
+do $$
+declare pol text;
+begin
+  if to_regclass('public.timetrack_data') is not null then
+    for pol in select policyname from pg_policies where schemaname = 'public' and tablename = 'timetrack_data' loop
+      execute format('drop policy %I on public.timetrack_data', pol);
+    end loop;
+    alter table public.timetrack_data enable row level security;
+    revoke all on public.timetrack_data from anon, authenticated;
+  end if;
+end $$;
+
 -- Difesa in profondità: revoca i grant di default al ruolo anon
 revoke all on public.profiles, public.clients, public.projects,
   public.project_finance, public.activities, public.rates,
   public.entries, public.entry_costs, public.app_settings from anon;
 
--- PROFILES: tutti gli autenticati leggono (nomi/colori servono alla UI);
+-- PROFILES: gli utenti attivi leggono tutti i profili (nomi/colori servono
+-- alla UI), un sospeso solo il proprio (l'app gli dice «Account sospeso»);
 -- update del proprio profilo o da admin (role/active protetti dal trigger);
 -- insert/delete solo via trigger/cascade (nessuna policy = negato)
+drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles
-  for select to authenticated using (true);
+  for select to authenticated using (id = auth.uid() or public.is_active());
+drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles
   for update to authenticated
   using (id = auth.uid() or public.is_admin())
   with check (id = auth.uid() or public.is_admin());
 
--- CLIENTS / PROJECTS / ACTIVITIES: lettura autenticati, scrittura solo admin
+-- CLIENTS / PROJECTS / ACTIVITIES: lettura utenti attivi, scrittura solo admin
+drop policy if exists clients_select on public.clients;
 create policy clients_select on public.clients
-  for select to authenticated using (true);
+  for select to authenticated using (public.is_active());
+drop policy if exists clients_admin_write on public.clients;
 create policy clients_admin_write on public.clients
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists projects_select on public.projects;
 create policy projects_select on public.projects
-  for select to authenticated using (true);
+  for select to authenticated using (public.is_active());
+drop policy if exists projects_admin_write on public.projects;
 create policy projects_admin_write on public.projects
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists activities_select on public.activities;
 create policy activities_select on public.activities
-  for select to authenticated using (true);
+  for select to authenticated using (public.is_active());
+drop policy if exists activities_admin_write on public.activities;
 create policy activities_admin_write on public.activities
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 -- PROJECT_FINANCE / RATES / APP_SETTINGS: tutto solo admin
+drop policy if exists finance_admin on public.project_finance;
 create policy finance_admin on public.project_finance
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists rates_admin on public.rates;
 create policy rates_admin on public.rates
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists settings_admin on public.app_settings;
 create policy settings_admin on public.app_settings
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 -- ENTRY_COSTS: lettura solo admin; scrittura solo dal trigger (security definer)
+drop policy if exists entry_costs_admin_select on public.entry_costs;
 create policy entry_costs_admin_select on public.entry_costs
   for select to authenticated using (public.is_admin());
 
--- ENTRIES: operator solo le proprie, admin tutte; insert bloccato se sospeso
+-- ENTRIES: operator attivo solo le proprie, admin tutte; un sospeso nessuna
+drop policy if exists entries_select on public.entries;
 create policy entries_select on public.entries
   for select to authenticated
-  using (user_id = auth.uid() or public.is_admin());
+  using ((user_id = auth.uid() and public.is_active()) or public.is_admin());
+drop policy if exists entries_insert on public.entries;
 create policy entries_insert on public.entries
   for insert to authenticated
-  with check (
-    (user_id = auth.uid() or public.is_admin())
-    and exists (select 1 from public.profiles where id = auth.uid() and active)
-  );
+  with check ((user_id = auth.uid() and public.is_active()) or public.is_admin());
+drop policy if exists entries_update on public.entries;
 create policy entries_update on public.entries
   for update to authenticated
-  using (user_id = auth.uid() or public.is_admin())
-  with check (user_id = auth.uid() or public.is_admin());
+  using ((user_id = auth.uid() and public.is_active()) or public.is_admin())
+  with check ((user_id = auth.uid() and public.is_active()) or public.is_admin());
+drop policy if exists entries_delete on public.entries;
 create policy entries_delete on public.entries
   for delete to authenticated
-  using (user_id = auth.uid() or public.is_admin());
+  using ((user_id = auth.uid() and public.is_active()) or public.is_admin());
 
 -- ═══════════════════════════════════════════════════════════
 -- 4. REALTIME (rispetta RLS per gli utenti autenticati)
---    Se rieseguito dà errore "already member of publication": ignorabile.
+--    Aggiunge solo le tabelle che mancano: rieseguire non dà errori.
 -- ═══════════════════════════════════════════════════════════
-alter publication supabase_realtime add table
-  public.profiles, public.clients, public.projects, public.activities,
-  public.entries, public.rates, public.project_finance, public.entry_costs;
+do $$
+declare t text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    return;   -- Postgres senza Supabase (test): niente Realtime
+  end if;
+  foreach t in array array['profiles','clients','projects','activities',
+                           'entries','rates','project_finance','entry_costs'] loop
+    if not exists (select 1 from pg_publication_tables
+                   where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════
 -- 5. VERIFICA
