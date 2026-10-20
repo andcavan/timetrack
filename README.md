@@ -47,8 +47,9 @@ Gestione Supabase allineata a quella di Bomtrack. **Richiede un aggiornamento de
 - Link di reimpostazione password generati per id utente, con l'email presa dall'account di accesso; non si può più generare il link di un **altro admin** (con quel link si entrerebbe al suo posto).
 
 **Modificato**
+- **L'app non è più legata a un progetto Supabase**: indirizzo e chiave pubblica non stanno più in `app.js` ma su ogni dispositivo, come in Bomtrack. Lo stesso `app.js` si può quindi pubblicare per progetti Supabase diversi. Un dispositivo si collega aprendo il **link di collegamento** (Gestione → Utenti → 🔗 Link di collegamento), oppure dalla schermata di accesso con "Collega progetto", inserendo indirizzo e chiave pubblica. "Cambia" sotto il modulo di accesso lo scollega.
 - Lo schema si sposta da `migrations/schema.sql` a `supabase/schema.sql` e si può **rieseguire** a ogni versione: crea solo ciò che manca, sostituisce funzioni, trigger e policy, non tocca i dati.
-- I link di invito e di reimpostazione riportano all'indirizzo da cui l'app è aperta.
+- I link di invito e di reimpostazione riportano al link di collegamento: chi apre l'invito su un dispositivo nuovo si ritrova già collegato al progetto giusto.
 - Un account creato a mano dal Dashboard Supabase resta sospeso finché un admin non lo riattiva da Gestione → Utenti.
 
 **Aggiunto**
@@ -116,13 +117,15 @@ Da fare una volta, nell'ordine, quando si pubblica la 4.0.0:
 
 1. **Schema**: Dashboard → SQL Editor → New query → incolla tutto `supabase/schema.sql` → Run. Il risultato atteso è lo stesso del punto 0.3 (9 righe con `rowsecurity = true`). Si può rieseguire: non tocca i dati.
 2. **Edge Function**: Dashboard → Edge Functions → `invite-user` → Code → incolla tutto `supabase/functions/invite-user/index.ts` → Deploy (verifica JWT sempre disattivata, vedi 2.2.1).
-3. **Redirect URLs**: Authentication → URL Configuration → Redirect URLs → aggiungi l'indirizzo dell'app (lo stesso del Site URL).
-4. Pubblica `app.js` sull'hosting e fai Ctrl+F5.
+3. **Pubblica** `app.js`, `index.html` e `style.css` sull'hosting.
+4. **Collega i dispositivi** (una volta per ognuno): apri l'app, scegli "Collega progetto" e inserisci l'indirizzo del progetto e la chiave pubblica (Dashboard → Project Settings → API Keys). Poi accedi da admin, vai in Gestione → Utenti → 🔗 **Link di collegamento**, copia il link e giralo ai colleghi: aprendolo hanno l'app già collegata. Il link ha questa forma: `https://tuodominio.it/timetrack/?supabase=https://xxxx.supabase.co&chiave=sb_publishable_…`
+5. **URL Configuration** (Authentication → URL Configuration): metti il link di collegamento come **Site URL**, e fra i **Redirect URLs** aggiungi l'indirizzo dell'app seguito da `**` (es. `https://tuodominio.it/timetrack/**`).
 
-> Fai i quattro passi di seguito. Nel frattempo: con lo schema nuovo e la Edge Function vecchia, un utente creato dall'app nasce operatore sospeso (si sistema da Gestione → Utenti); con la Edge Function nuova e il vecchio `app.js`, il bottone 🔑 risponde "Email non valida" finché non pubblichi `app.js`.
+> Fai i passi di seguito. Nel frattempo: con lo schema nuovo e la Edge Function vecchia, un utente creato dall'app nasce operatore sospeso (si sistema da Gestione → Utenti); con la Edge Function nuova e il vecchio `app.js`, il bottone 🔑 risponde "Email non valida" finché non pubblichi `app.js`.
 
 ## Come è organizzato Supabase (come in Bomtrack)
 
+- **Il progetto non sta nel codice**: indirizzo e chiave pubblica sono in `localStorage` su ogni dispositivo (`tt_supabase`), arrivati con il link di collegamento (`?supabase=…&chiave=…`) o inseriti a mano. Per un nuovo progetto Supabase basta eseguire lo schema, pubblicare la Edge Function, creare il primo utente dal Dashboard (diventa admin) e collegare i dispositivi.
 - `supabase/schema.sql` — l'unica fonte dello schema: tabelle, funzioni, trigger, RLS, Realtime. Rieseguibile.
 - `supabase/functions/invite-user/` — la Edge Function per creare utenti e generare link, con la service_role che non passa mai dal browser.
 - `test/schema.test.mjs` + `test/supabase-stub.sql` — lo schema caricato in un Postgres vero, con le chiamate fatte come un utente dell'app. In locale: `TIMETRACK_PG="host=localhost user=postgres" node --test test/schema.test.mjs` (senza la variabile i test si dichiarano saltati).

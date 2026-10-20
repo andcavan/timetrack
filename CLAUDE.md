@@ -22,3 +22,5 @@ Lo schema è `supabase/schema.sql` e deve restare **rieseguibile** (`if not exis
 `create or replace`, `drop … if exists` prima di trigger e policy). Ogni modifica va provata con
 `TIMETRACK_PG="host=localhost user=postgres" node --test test/schema.test.mjs`, che gira anche in CI.
 Il ruolo di un utente non passa mai dai metadata di Auth: lo assegna un admin dopo la creazione.
+Indirizzo e chiave del progetto non vanno mai scritti nel codice: l'app si collega per dispositivo
+(`tt_supabase` in localStorage, link di collegamento `?supabase=…&chiave=…`).
