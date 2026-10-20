@@ -1,0 +1,44 @@
+# Stesso approccio di Bomtrack: nessun `npm install`, solo Node, psql e i
+# file del repo. Impedisce che una modifica arrivi su main con lo schema
+# rotto o con app.js che non si carica.
+name: test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Un Postgres vero per test/schema.test.mjs: carica supabase/schema.sql
+    # (due volte) e ne prova RLS, guardie sui profili e ricalcolo costi.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      TIMETRACK_PG: host=localhost port=5432 user=postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Sintassi di app.js e degli script
+        run: |
+          node --check app.js
+          for f in migrations/*.mjs; do node --check "$f"; done
+      - name: Versione allineata fra app.js e README
+        run: |
+          js=$(grep -oE "APP_VERSION *= *'[^']+'" app.js | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+          md=$(grep -oE '\*\*Versione corrente: [0-9]+\.[0-9]+\.[0-9]+\*\*' README.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "app.js=$js README=$md"
+          test -n "$js" && test "$js" = "$md"
+      - name: Schema su Postgres
+        run: node --test test/schema.test.mjs

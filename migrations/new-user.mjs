@@ -11,7 +11,8 @@
 //    node new-user.mjs anna@azienda.it "Anna Bianchi" anna admin
 //
 //  ruolo: operator (default) oppure admin.
-//  Il profilo compare nell'app al primo accesso dell'utente.
+//  Il ruolo non passa dai metadata (vedi handle_new_user in
+//  supabase/schema.sql): lo script completa il profilo subito dopo.
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -37,12 +38,23 @@ const supa = createClient(URL, KEY, { auth: { autoRefreshToken: false, persistSe
 
 const { data, error } = await supa.auth.admin.generateLink({
   type: 'invite', email,
-  options: { data: { name, username, role, color } }
+  options: { data: { name } }
 });
 if (error) {
   console.error('✗ Errore:', error.message);
   if (error.message.includes('already been registered'))
     console.error('  (utente già esistente: per un nuovo link password usa "node gen-links.mjs ' + email + '")');
+  process.exit(1);
+}
+
+// Con la service_role la guardia sui profili non scatta: ruolo e stato si
+// scrivono direttamente.
+const { error: profErr } = await supa.from('profiles')
+  .update({ name, username, role, color, active: true })
+  .eq('id', data.user.id);
+if (profErr) {
+  console.error('✗ Utente creato ma profilo non completato:', profErr.message);
+  console.error('  Assegna ruolo e riattivalo da Gestione → Utenti.');
   process.exit(1);
 }
 

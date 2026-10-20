@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '4.0.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -324,6 +324,11 @@ async function submitSetPwd(){
   await initSession();
 }
 
+// L'indirizzo dell'app, dove riportano i link di invito/recovery generati
+// dalla Edge Function (va messo fra i Redirect URLs del progetto Supabase;
+// senza, Supabase usa il Site URL)
+function appReturnUrl(){return /^https?:/.test(location.protocol)?location.origin+location.pathname:undefined}
+
 // Estrae un messaggio leggibile dagli errori di supa.functions.invoke:
 // la nostra funzione risponde {error}, il gateway Supabase {code,message}
 async function fnErrorMessage(error,fallback){
@@ -348,7 +353,7 @@ async function resetUserPassword(uid){
   if(!u)return;
   if(!u.email||!u.email.includes('@')){showToast('Utente senza email','error');return}
   if(!confirm(`Generare un link di reimpostazione password per ${u.name} (${u.email})?`))return;
-  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',email:u.email}});
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'recovery',id:u.id,redirect:appReturnUrl()}});
   if(error){
     console.error(error);
     showToast(await fnErrorMessage(error,'Generazione non riuscita'),'error');
@@ -922,18 +927,19 @@ function renderGuideTab(){
         <ul>
           <li><b>Frontend</b>: 3 file statici (<code>index.html</code>, <code>app.js</code>, <code>style.css</code>) pubblicati su hosting semplice; librerie da CDN con integrità verificata (SRI).</li>
           <li><b>Backend</b>: progetto Supabase — Auth, Postgres con RLS, Realtime, e la Edge Function <code>invite-user</code>.</li>
-          <li><b>Schema e procedura completa</b>: nel repository, <code>migrations/schema.sql</code> e <code>README.md</code>.</li>
+          <li><b>Schema e procedura completa</b>: nel repository, <code>supabase/schema.sql</code> (si può rieseguire a ogni versione) e <code>README.md</code>.</li>
         </ul>
         <h4>Edge Function invite-user</h4>
         <ul>
           <li>Crea gli utenti e genera i link di invito/reimpostazione usando la chiave <code>service_role</code>, che non può stare nel browser: per questo gira sul server Supabase. Verifica da sola che il chiamante sia un admin attivo.</li>
+          <li>Il ruolo del nuovo utente non passa dai metadata dell'account: il profilo nasce operatore sospeso e la funzione lo completa con il token dell'admin. Un account creato a mano nel Dashboard resta quindi <b>sospeso</b> finché un admin non lo riattiva da Gestione → Utenti.</li>
           <li>Il sorgente è nel repository: <code>supabase/functions/invite-user/index.ts</code>. Per (ri)pubblicarla: Dashboard → Edge Functions → invite-user → Code → incolla <b>tutto</b> il file → Deploy.</li>
         </ul>
         <div class="g-warn"><b>Due errori già capitati, da non ripetere:</b><br>1) La verifica JWT del gateway ("Verify JWT with legacy secret") deve restare <b>disattivata</b> (scheda Settings della funzione e spunta nel dialogo di deploy): il progetto usa le nuove API keys e la verifica legacy respingerebbe ogni chiamata con <code>401 INVALID_CREDENTIALS</code>.<br>2) Se dopo un deploy i link non funzionano e l'errore è generico, controlla di non aver pubblicato il <b>codice di esempio</b> dell'editor al posto del file vero.</div>
         <h4>Impostazioni del progetto Supabase</h4>
         <ul>
           <li><b>Authentication → Sign In / Up</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); password minimo 8 caratteri.</li>
-          <li><b>Authentication → URL Configuration → Site URL</b>: deve essere l'indirizzo esatto dell'app pubblicata, altrimenti i link di invito rimandano al posto sbagliato.</li>
+          <li><b>Authentication → URL Configuration → Site URL</b>: deve essere l'indirizzo esatto dell'app pubblicata, altrimenti i link di invito rimandano al posto sbagliato. Lo stesso indirizzo va anche fra i <b>Redirect URLs</b>: l'app lo passa alla Edge Function come ritorno dei link.</li>
           <li><b>Niente SMTP</b> configurato (scelta voluta): nessuna email automatica, i link si distribuiscono a mano e non ci sono limiti di invio.</li>
           <li><b>API Keys</b>: l'app usa la <b>publishable key</b> (formato <code>sb_publishable_…</code>). Se le chiavi venissero ruotate, aggiornare <code>SUPABASE_KEY</code> in cima ad <code>app.js</code> e ripubblicare.</li>
         </ul>
@@ -1309,7 +1315,7 @@ async function submitNewUser(){
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){showErr('Email non valida');return}
   const btn=document.getElementById('nu-submit');
   btn.disabled=true;btn.textContent='Creazione...';
-  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role}});
+  const {data,error}=await supa.functions.invoke('invite-user',{body:{action:'invite',email,name,username,role,redirect:appReturnUrl()}});
   if(error){
     btn.disabled=false;btn.textContent='Crea e genera link';
     showErr(await fnErrorMessage(error,'Creazione non riuscita'));
