@@ -383,6 +383,18 @@ revoke all on function public.is_admin() from public, anon;
 revoke all on function public.is_active() from public, anon;
 revoke all on function public.next_project_num() from public, anon;
 revoke all on function public.recompute_all_entry_costs() from public, anon;
+-- Funzioni interne (trigger e calcolo tariffe): security definer, quindi
+-- chiamarle via /rest/v1/rpc/… scavalcherebbe la RLS. resolve_rates() in
+-- particolare restituirebbe le tariffe a un operator. Le usano solo i
+-- trigger e le altre funzioni security definer, che non hanno bisogno del
+-- grant.
+revoke all on function public.resolve_rates(uuid, text, text, date) from public, anon, authenticated;
+revoke all on function public.recompute_entry_cost(text) from public, anon, authenticated;
+revoke all on function public.snapshot_entry_rates() from public, anon, authenticated;
+revoke all on function public.rates_recompute_affected() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.profiles_ultimo_admin() from public, anon, authenticated;
+revoke all on function public.profiles_guardia() from public, anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.is_active() to authenticated;
 grant execute on function public.next_project_num() to authenticated;
@@ -402,6 +414,21 @@ alter table public.rates           enable row level security;
 alter table public.entries         enable row level security;
 alter table public.entry_costs     enable row level security;
 alter table public.app_settings    enable row level security;
+
+-- Il vecchio blob della 1.x (se c'è ancora): resta come archivio, ma la
+-- chiave pubblica non deve più leggerlo né scriverlo (conteneva anche gli
+-- hash delle password). Lo legge solo chi entra dal Dashboard.
+do $$
+declare pol text;
+begin
+  if to_regclass('public.timetrack_data') is not null then
+    for pol in select policyname from pg_policies where schemaname = 'public' and tablename = 'timetrack_data' loop
+      execute format('drop policy %I on public.timetrack_data', pol);
+    end loop;
+    alter table public.timetrack_data enable row level security;
+    revoke all on public.timetrack_data from anon, authenticated;
+  end if;
+end $$;
 
 -- Difesa in profondità: revoca i grant di default al ruolo anon
 revoke all on public.profiles, public.clients, public.projects,

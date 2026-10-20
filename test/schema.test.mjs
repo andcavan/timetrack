@@ -138,6 +138,25 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     assert.equal(profile(X), 'admin|true');
   });
 
+  test('le funzioni interne non si chiamano dall\'API', () => {
+    rejects(() => as(OP)(`select * from public.resolve_rates('${OP}', 'c1', 'p1', '2026-03-01');`), /permission denied/);
+    rejects(() => as(OP)(`select public.recompute_entry_cost('e1');`), /permission denied/);
+    rejects(() => asRole('anon')(`select * from public.resolve_rates(null, 'c1', 'p1', '2026-03-01');`), /permission denied/);
+  });
+
+  test('il vecchio blob timetrack_data non è più raggiungibile con la chiave pubblica', () => {
+    sql(`create table public.timetrack_data (id int primary key, data jsonb);
+         alter table public.timetrack_data enable row level security;
+         create policy "Allow all operations" on public.timetrack_data for all using (true) with check (true);
+         insert into public.timetrack_data values (1, '{}');`);
+    assert.equal(asRole('anon')(`select count(*) from public.timetrack_data;`), '1');
+    sql(SCHEMA);
+    rejects(() => asRole('anon')(`select count(*) from public.timetrack_data;`), /permission denied/);
+    rejects(() => as(A1)(`select count(*) from public.timetrack_data;`), /permission denied/);
+    assert.equal(sql(`select count(*) from public.timetrack_data;`), '1');
+    sql(`drop table public.timetrack_data;`);
+  });
+
   test('senza sessione (anon) non si legge niente', () => {
     for (const t of ['profiles', 'clients', 'entries', 'rates']) {
       rejects(() => asRole('anon')(`select count(*) from public.${t};`), /permission denied/);

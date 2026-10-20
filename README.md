@@ -44,6 +44,8 @@ Gestione Supabase allineata a quella di Bomtrack. **Richiede un aggiornamento de
 - Un account sospeso non legge più clienti, commesse, attività, ore né gli altri profili (prima poteva leggerli passando dall'API): vede solo il proprio profilo, e l'app gli dice "Account sospeso".
 - Un non-admin non può cambiare la propria **email** di profilo (oltre a ruolo e stato, come già prima).
 - Deve restare sempre almeno un **amministratore attivo**: l'ultimo non si declassa, non si sospende e non si elimina, nemmeno cancellandolo dal Dashboard.
+- Le funzioni interne del calcolo tariffe e dei trigger non sono più chiamabili dall'API: prima un operatore poteva leggere le tariffe chiamando `resolve_rates` direttamente.
+- Il vecchio archivio `timetrack_data` della 1.x non è più leggibile né scrivibile con la chiave pubblica (la policy "Allow all operations" era rimasta attiva, e l'archivio contiene anche gli hash delle vecchie password). La tabella resta, consultabile dal Dashboard.
 - Link di reimpostazione password generati per id utente, con l'email presa dall'account di accesso; non si può più generare il link di un **altro admin** (con quel link si entrerebbe al suo posto).
 
 **Modificato**
