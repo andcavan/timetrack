@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.0.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,12 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.0.1] — 2026-10-20
+
+**Corretto**
+- Report → "Registrazioni filtrate" mostra di nuovo le registrazioni in ordine cronologico, dalla più recente alla più vecchia (a parità di giorno, l'ultima inserita in cima). Prima l'ordine dipendeva da come il database restituiva le righe, e una registrazione modificata poteva finire fuori posto; per lo stesso motivo le "ultime 100" mostrate non erano sempre davvero le ultime.
+- Il report esportato elenca le registrazioni in ordine cronologico, dalla più vecchia alla più recente, anche dentro ogni gruppo.
 
 ### [4.0.0] — 2026-10-20
 

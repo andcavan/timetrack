@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION = '4.0.0';
+const APP_VERSION='4.0.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -729,7 +729,13 @@ function getFilteredEntries(){
   // Filtro utente (solo admin)
   if(_a()&&reportFilters.userId)ents=ents.filter(e=>e.userId===reportFilters.userId);
   
-  return ents;
+  // Supabase non garantisce un ordine (e una riga modificata può finire in fondo):
+  // ordine cronologico per data, a parità di data per momento d'inserimento
+  return ents.sort(byEntryTime);
+}
+
+function byEntryTime(a,b){
+  return a.date.localeCompare(b.date)||(a.createdAt||'').localeCompare(b.createdAt||'');
 }
 
 function updateFilterSummary(ents){
@@ -1173,7 +1179,7 @@ function openProjectDetail(id){
   const actHtml=(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${esc(a.name)} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna attività</span>';
   const byUser={};st.pe.forEach(e=>{byUser[e.userId]=(byUser[e.userId]||0)+e.hours});
   const userHtml=Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([uid,h])=>{const u=db.users.find(x=>x.id===uid);return`<span class="proj-act-tag"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${safeColor(u?.color)};margin-right:4px"></span>${esc(u?.name||'?')} <b style="color:var(--accent)">${h}h</b></span>`}).join('')||'<span style="font-style:italic;color:var(--text-dim)">Nessuna registrazione</span>';
-  const recent=[...st.pe].sort((a,b)=>(b.date+(b.createdAt||'')).localeCompare(a.date+(a.createdAt||''))).slice(0,8);
+  const recent=[...st.pe].sort((a,b)=>byEntryTime(b,a)).slice(0,8);
   const recentHtml=recent.map(e=>{const u=db.users.find(x=>x.id===e.userId);const a=p.activities?.find(x=>x.id===e.activityId);return`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);color:var(--text-dim);min-width:70px">${fmtDate(e.date)}</span>${_a()?`<span style="min-width:70px">${esc(u?.name?.split(' ')[0]||'?')}</span>`:''}<span style="flex:1;color:var(--text-dim)">${esc(a?.name||'—')}${e.note?' · '+esc(e.note):''}</span><span style="font-weight:600">${e.hours}h</span></div>`}).join('')||'<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Nessuna registrazione</div>';
   const stBtn=(s,l,col,bg)=>`<button class="mini-btn" onclick="setProjectStatus('${p.id}','${s}').then(()=>{renderProjectReport();openProjectDetail('${p.id}')})"${p.status===s?` style="background:${bg};color:${col};border-color:${col}"`:''}>${l}</button>`;
   openModal(`<h3>${esc(p.code||'—')} - ${esc(p.name)}</h3>
