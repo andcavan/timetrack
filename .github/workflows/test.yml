@@ -33,6 +33,8 @@ jobs:
       - name: Sintassi di app.js e degli script
         run: |
           node --check app.js
+          node --check icons.js
+          node --check theme.js
           for f in migrations/*.mjs; do node --check "$f"; done
       - name: Versione allineata fra app.js e README
         run: |
