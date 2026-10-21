@@ -7,6 +7,8 @@
 <!-- Icona dell'app nella scheda del browser: SVG inline (data URI), nessun file esterno da caricare sull'hosting -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233A7BE8'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='32' cy='32' r='18'/%3E%3Cpolyline points='32 20 32 32 41 37'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0F1117">
+<!-- Il tema si applica prima del primo disegno (stessa chiave di THEME_KEY in theme.js): niente lampo scuro per chi ha scelto il chiaro. -->
+<script>try{var t=localStorage.getItem('tt_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -17,7 +19,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 </head>
 <body>
-<div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:#888;box-shadow:0 4px 12px rgba(0,0,0,.3)">○ Caricamento...</div>
+<div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:var(--text-dim);box-shadow:0 4px 12px var(--shadow-soft)">○ Caricamento...</div>
 
 <div id="toast"></div>
 <div id="modal-root"></div>
@@ -52,7 +54,8 @@
   <div class="header-right">
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
-    <button class="logout-btn" onclick="changePassword()" title="Cambia password">🔑</button>
+    <button class="logout-btn btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
+    <button class="logout-btn btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password"><svg class="ico ic-key tinted" aria-hidden="true"><use href="#ic-key"></use></svg></button>
     <button class="logout-btn" onclick="logout()">Esci</button>
   </div>
 </header>
@@ -61,7 +64,7 @@
   <!-- TIMESHEET -->
   <div id="view-timesheet" class="view-panel active">
     <div class="quick-section">
-      <h2 class="section-title">⚡ Inserimento Rapido</h2>
+      <h2 class="section-title"><svg class="ico ic-bolt tinted" aria-hidden="true"><use href="#ic-bolt"></use></svg> Inserimento Rapido</h2>
       <div class="quick-grid">
         <div class="field-group" style="position:relative">
           <label>Commessa</label>
@@ -76,7 +79,7 @@
         <div class="field-group"><label>Nota</label><input type="text" id="qe-note" placeholder="opzionale"></div>
       </div>
       <div class="quick-hours" id="quick-hours"></div>
-      <button class="add-btn" onclick="addEntry()">✓ Registra Ore</button>
+      <button class="add-btn" onclick="addEntry()"><svg class="ico ic-check" aria-hidden="true"><use href="#ic-check"></use></svg> Registra Ore</button>
     </div>
     <div class="week-section">
       <div class="week-nav">
@@ -94,12 +97,12 @@
   <div id="view-dashboard" class="view-panel">
     <div class="dash-wrap">
       <div class="dash-head">
-        <h2 class="section-title">📊 Report</h2>
+        <h2 class="section-title"><svg class="ico ic-chart tinted" aria-hidden="true"><use href="#ic-chart"></use></svg> Report</h2>
       </div>
       
       <!-- Filtri Report -->
       <div class="breakdown-section" style="margin-bottom:24px">
-        <h3 class="sub-title">🔍 Filtri</h3>
+        <h3 class="sub-title"><svg class="ico ic-search tinted" aria-hidden="true"><use href="#ic-search"></use></svg> Filtri</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">
           <div>
             <label style="display:block;font-size:13px;color:var(--text-dim);margin-bottom:6px">Periodo</label>
@@ -140,9 +143,9 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="add-btn-sm" onclick="applyFilters()">🔍 Applica filtri</button>
-          <button class="btn-ghost" onclick="resetFilters()" style="padding:8px 16px;font-size:13px">↺ Reset</button>
-          <button class="add-btn-sm" onclick="showExportModal()" style="margin-left:auto;background:var(--accent)">📊 Esporta Report</button>
+          <button class="add-btn-sm" onclick="applyFilters()"><svg class="ico ic-search" aria-hidden="true"><use href="#ic-search"></use></svg> Applica filtri</button>
+          <button class="btn-ghost" onclick="resetFilters()" style="padding:8px 16px;font-size:13px"><svg class="ico ic-refresh" aria-hidden="true"><use href="#ic-refresh"></use></svg> Reset</button>
+          <button class="add-btn-sm" onclick="showExportModal()" style="margin-left:auto;background:var(--accent)"><svg class="ico ic-download" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta Report</button>
           <span id="filter-summary" style="font-size:13px;color:var(--text-dim)"></span>
         </div>
       </div>
@@ -157,7 +160,7 @@
   <!-- PROJECT REPORTS -->
   <div id="view-projects" class="view-panel">
     <div class="dash-wrap">
-      <h2 class="section-title">📋 Report Commesse</h2>
+      <h2 class="section-title"><svg class="ico ic-clipboard tinted" aria-hidden="true"><use href="#ic-clipboard"></use></svg> Report Commesse</h2>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <input id="prf-search" placeholder="Cerca codice, nome, cliente…" oninput="renderProjectReport()" style="flex:2;min-width:180px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none">
         <select id="prf-client" onchange="renderProjectReport()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option></select>
@@ -183,22 +186,24 @@
   <!-- MANAGE -->
   <div id="view-manage" class="view-panel">
     <div class="manage-wrap">
-      <h2 class="section-title">⚙ Gestione Anagrafiche</h2>
+      <h2 class="section-title"><svg class="ico ic-settings tinted" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione Anagrafiche</h2>
       <div class="mgmt-tabs" id="mgmt-tabs"></div>
       <div id="mgmt-content"></div>
       <div class="cloud-section">
-        <div><strong>☁ Sync Cloud</strong><p>Dati salvati su Supabase con accesso autenticato e permessi per ruolo. Backup automatici lato server; export JSON disponibile nella tab Backup.</p></div>
+        <div><strong><svg class="ico ic-cloud tinted" aria-hidden="true"><use href="#ic-cloud"></use></svg> Sync Cloud</strong><p>Dati salvati su Supabase con accesso autenticato e permessi per ruolo. Backup automatici lato server; export JSON disponibile nella tab Backup.</p></div>
       </div>
     </div>
   </div>
 </div>
 
+<script src="icons.js"></script>
 <script src="app.js"></script>
+<script src="theme.js"></script>
 
 <!-- EXPORT REPORT MODAL -->
 <div id="export-modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeExportModal()">
   <div class="modal export-modal">
-    <h3>📊 Esporta Report</h3>
+    <h3><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta Report</h3>
 
     <div class="modal-field">
       <label>Titolo report</label>
@@ -235,8 +240,8 @@
 
     <div class="modal-actions" style="gap:10px;flex-wrap:wrap">
       <button class="btn-ghost" onclick="closeExportModal()" style="padding:10px 16px;font-size:13px">Annulla</button>
-      <button class="export-btn-xls" onclick="exportReportExcel()">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportReportPDF()">📄 Esporta PDF</button>
+      <button class="export-btn-xls" onclick="exportReportExcel()"><svg class="ico ic-sheet" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportReportPDF()"><svg class="ico ic-file" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
   </div>
 </div>

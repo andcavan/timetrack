@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='4.0.1';
+const APP_VERSION='4.1.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -83,8 +83,8 @@ const supa=_supaCfg?window.supabase.createClient(_supaCfg.url,_supaCfg.key):null
 function updateSyncStatus(status){
   const el=document.getElementById('sync-status');
   if(!el)return;
-  const colors={ok:'#2EAE6D',sync:'#E8A33A',err:'#E85A4F',off:'#888'};
-  const labels={ok:'✓ Sincronizzato',sync:'⟳ Sincronizzazione...',err:'✗ Errore sync',off:'○ Offline'};
+  const colors={ok:'var(--green)',sync:'var(--orange)',err:'var(--red)',off:'var(--text-dim)'};
+  const labels={ok:`${ico('check')} Sincronizzato`,sync:'⟳ Sincronizzazione...',err:`${ico('close')} Errore sync`,off:'○ Offline'};
   el.style.background=colors[status];
   el.innerHTML=labels[status];
 }
@@ -424,7 +424,7 @@ async function resetUserPassword(uid){
 
 // ═══ COLLEGAMENTO AL PROGETTO SUPABASE ═══
 function showSupaConnectModal(){
-  openModal(`<h3>🔌 Collega il progetto Supabase</h3>
+  openModal(`<h3>${ico('plug')} Collega il progetto Supabase</h3>
     <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Il modo più semplice è aprire il <b>link di collegamento</b> che ti manda l'amministratore. In alternativa inserisci i dati del progetto: li trovi nel Dashboard Supabase in <b>Project Settings → API Keys</b>. La chiave è quella <b>pubblica</b> (<code>sb_publishable_…</code> o anon), mai la service_role.</p>
     <div class="modal-field"><label>Indirizzo del progetto</label><input id="sc-url" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
     <div class="modal-field"><label>Chiave pubblica</label><input id="sc-key" placeholder="sb_publishable_…" autocomplete="off"></div>
@@ -455,11 +455,11 @@ async function disconnectSupa(){
 // Solo admin: il link da girare ai colleghi per collegare i loro dispositivi
 function showConnectionLinkModal(){
   if(!_a())return;
-  openModal(`<h3>🔗 Link di collegamento</h3>
+  openModal(`<h3>${ico('link')} Link di collegamento</h3>
     <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Chi apre questo link si ritrova TimeTrack già collegato a questo progetto Supabase, poi accede con la sua email e password. Contiene solo la chiave <b>pubblica</b>: non è un segreto, a proteggere i dati sono le policy.</p>
     <div style="display:flex;gap:8px;align-items:center">
       <input id="il-link" readonly value="${esc(connectionLink())}" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
-      <button class="add-btn-sm" onclick="copyInviteLink()">📋 Copia</button>
+      <button class="add-btn-sm" onclick="copyInviteLink()">${ico('copy')} Copia</button>
     </div>
     <p style="font-size:12px;color:var(--text-dim);margin:12px 0 0">Mettilo anche in Supabase come <b>Site URL</b> (Authentication → URL Configuration), e aggiungi fra i <b>Redirect URLs</b> l'indirizzo dell'app seguito da <code>**</code>: così inviti e reimpostazioni password tornano qui già collegati.</p>
     <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Chiudi</button></div>`);
@@ -470,8 +470,8 @@ function renderHeader(){
   const pill=document.getElementById('user-pill');
   pill.style.borderColor=safeColor(currentUser.color);
   pill.innerHTML=`<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}`;
-  const tabs=[{id:'timesheet',label:'Ore',icon:'📅'},{id:'dashboard',label:'Report',icon:'📊'},{id:'projects',label:'Commesse',icon:'📋'}];
-  if(_a())tabs.push({id:'manage',label:'Gestione',icon:'⚙'});
+  const tabs=[{id:'timesheet',label:'Ore',icon:`${ico('calendar')}`},{id:'dashboard',label:'Report',icon:`${ico('chart')}`},{id:'projects',label:'Commesse',icon:`${ico('clipboard')}`}];
+  if(_a())tabs.push({id:'manage',label:'Gestione',icon:`${ico('settings')}`});
   document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
 }
 function setView(v){
@@ -561,7 +561,7 @@ function renderWeek(){
 }
 function renderCard(e){
   const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId),can=_a()||e.userId===currentUser.id,showU=_a()&&e.userId!==currentUser.id;
-  return`<div class="entry-card" style="border-left-color:${safeColor(usr?.color)}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">✏</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">🗑</button></div>`:''}</div>`;
+  return`<div class="entry-card" style="border-left-color:${safeColor(usr?.color)}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">${ico('edit')}</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">${ico('trash')}</button></div>`:''}</div>`;
 }
 
 // Add global event delegation for all buttons with data-action
@@ -599,7 +599,7 @@ function editEntryModal(id){
   // Build full cascade for client/project change
   const clients=db.clients.filter(c=>c.active);
   const projects=db.projects.filter(p=>p.clientId===e.clientId&&p.status==='active');
-  openModal(`<h3>✏ Modifica Registrazione</h3>
+  openModal(`<h3>${ico('edit')} Modifica Registrazione</h3>
     <div class="modal-field"><label>Cliente</label><select id="me-client" onchange="onEditClientChange()">
       ${clients.map(c=>`<option value="${c.id}" ${c.id===e.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Commessa</label><select id="me-project" onchange="onEditProjectChange()">
@@ -830,7 +830,7 @@ function renderProjectBreakdown(entries){
         <div class="proj-donut-chart">${donutSvg}<div class="proj-donut-center"><div class="proj-donut-center-val">${data.hours.toFixed(0)}h</div><div class="proj-donut-center-lab">TOTALE</div></div></div>
         <div class="proj-donut-legend">${actEntries.map((a,i)=>`<div class="proj-donut-item"><div class="proj-donut-color" style="background:${colors[i%colors.length]}"></div><div class="proj-donut-label">${esc(a.name)}</div><div class="proj-donut-value">${a.hours.toFixed(1)}h<span class="proj-donut-pct">${a.pct.toFixed(0)}%</span></div></div>`).join('')}</div>
       </div>
-      ${_a()?`<div class="proj-donut-footer"><div class="proj-donut-stat"><span style="color:var(--text-dim)">💰 Costo:</span><span style="font-weight:600">€${data.cost.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">📈 Ricavo:</span><span style="font-weight:600;color:var(--green)">€${data.revenue.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">✨ Margine:</span><span style="font-weight:700;color:${data.revenue-data.cost>=0?'var(--green)':'var(--red)'}">€${(data.revenue-data.cost).toFixed(0)}</span></div></div>`:''}
+      ${_a()?`<div class="proj-donut-footer"><div class="proj-donut-stat"><span style="color:var(--text-dim)">${ico('euro')} Costo:</span><span style="font-weight:600">€${data.cost.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">${ico('trend')} Ricavo:</span><span style="font-weight:600;color:var(--green)">€${data.revenue.toFixed(0)}</span></div><div class="proj-donut-stat"><span style="color:var(--text-dim)">${ico('chart')} Margine:</span><span style="font-weight:700;color:${data.revenue-data.cost>=0?'var(--green)':'var(--red)'}">€${(data.revenue-data.cost).toFixed(0)}</span></div></div>`:''}
     </div>`;
   }).join('')+'</div>';
 }
@@ -860,7 +860,7 @@ function polarToCartesian(cx,cy,r,deg){
 function renderBackupTab(){
   const el=document.getElementById('mgmt-content');
   el.innerHTML=`<div class="mgmt-panel" style="max-width:800px">
-    <h3 style="margin:0 0 12px;color:var(--accent)">💾 Backup</h3>
+    <h3 style="margin:0 0 12px;color:var(--accent)">${ico('save')} Backup</h3>
     <p style="color:var(--text-dim);font-size:14px;margin:0 0 16px">
       I dati sono protetti dai <b>backup automatici di Supabase</b> (Dashboard → Database → Backups).
       Da qui puoi scaricare un export JSON dei dati visibili al tuo account, da conservare come copia periodica.
@@ -878,11 +878,11 @@ function renderGuideTab(){
   if(!_a())return;
   const el=document.getElementById('mgmt-content');
   el.innerHTML=`<div class="mgmt-panel guide">
-    <h3 style="margin:0 0 6px;color:var(--accent)">📖 Guida all'uso e alla configurazione</h3>
+    <h3 style="margin:0 0 6px;color:var(--accent)">${ico('book')} Guida all'uso e alla configurazione</h3>
     <p class="guide-intro">Manuale completo di TimeTrack riservato agli amministratori. Clicca su una sezione per aprirla.</p>
 
     <details open>
-      <summary>👥 Ruoli e permessi</summary>
+      <summary>${ico('users')} Ruoli e permessi</summary>
       <div class="guide-body">
         <p>Ogni utente ha uno dei due ruoli, applicati <b>lato server</b> (Row Level Security su Supabase): anche modificando il browser non è possibile aggirarli.</p>
         <table>
@@ -894,21 +894,21 @@ function renderGuideTab(){
           <tr><td>Utenti, tariffe, backup, guida</td><td>Non accessibili</td><td>Tab Gestione</td></tr>
         </table>
         <ul>
-          <li>Il ruolo si cambia da <b>Gestione → Utenti → ✏</b>. Un trigger server impedisce l'auto-promozione: solo un admin può cambiare i ruoli.</li>
+          <li>Il ruolo si cambia da <b>Gestione → Utenti → ${ico('edit')}</b>. Un trigger server impedisce l'auto-promozione: solo un admin può cambiare i ruoli.</li>
           <li>Un admin non può essere sospeso, e nessuno può sospendere sé stesso.</li>
         </ul>
       </div>
     </details>
 
     <details>
-      <summary>⏱ Registrare le ore (tab Ore)</summary>
+      <summary>${ico('clock')} Registrare le ore (tab Ore)</summary>
       <div class="guide-body">
         <h4>Inserimento rapido</h4>
         <ol>
           <li><b>Commessa</b>: digita nel campo di ricerca (codice, nome o cliente). Compaiono solo le commesse <b>attive</b> e, se la commessa ha utenti assegnati, solo agli assegnati.</li>
           <li>Il <b>cliente</b> si compila da solo; scegli l'<b>attività</b> dalla tendina (le attività si definiscono per commessa in Gestione → Commesse).</li>
           <li><b>Data</b> (proposta oggi), <b>ore</b> a passi di 0,25 (15 minuti) — oppure usa i bottoni rapidi 1h/2h/4h/6h/8h — e una <b>nota</b> facoltativa.</li>
-          <li>Premi <b>✓ Registra Ore</b>.</li>
+          <li>Premi <b>${ico('check')} Registra Ore</b>.</li>
         </ol>
         <h4>Griglia settimanale</h4>
         <ul>
@@ -921,24 +921,24 @@ function renderGuideTab(){
     </details>
 
     <details>
-      <summary>📊 Report e esportazioni (tab Report)</summary>
+      <summary>${ico('chart')} Report e esportazioni (tab Report)</summary>
       <div class="guide-body">
         <h4>Filtri</h4>
         <ul>
           <li><b>Periodo</b>: mese corrente/scorso, anno corrente/scorso, tutto, oppure date personalizzate.</li>
-          <li><b>Cliente, commessa, utente</b>: combinabili tra loro. Premi <b>🔍 Applica filtri</b>; <b>↺ Reset</b> riparte da zero.</li>
+          <li><b>Cliente, commessa, utente</b>: combinabili tra loro. Premi <b>${ico('search')} Applica filtri</b>; <b>${ico('refresh')} Reset</b> riparte da zero.</li>
         </ul>
         <p>Sotto i filtri trovi i KPI del periodo, il dettaglio per cliente e per commessa e l'elenco delle registrazioni filtrate. Costi e ricavi compaiono solo agli admin.</p>
         <h4>Esporta Report (Excel o PDF)</h4>
         <ul>
-          <li>Il bottone <b>📊 Esporta Report</b> apre le opzioni: titolo, colonne da includere (data, utente, cliente, commessa, attività, ore, costo €, ricavo €, note), raggruppamento per cliente/commessa/utente, totali per gruppo e riepilogo KPI.</li>
+          <li>Il bottone <b>${ico('download')} Esporta Report</b> apre le opzioni: titolo, colonne da includere (data, utente, cliente, commessa, attività, ore, costo €, ricavo €, note), raggruppamento per cliente/commessa/utente, totali per gruppo e riepilogo KPI.</li>
           <li>L'export rispetta i filtri attivi: filtra prima, esporta poi.</li>
         </ul>
       </div>
     </details>
 
     <details>
-      <summary>📋 Monitoraggio commesse (tab Commesse)</summary>
+      <summary>${ico('clipboard')} Monitoraggio commesse (tab Commesse)</summary>
       <div class="guide-body">
         <ul>
           <li>Una scheda per commessa con avanzamento <b>ore</b> (usate / budget ore), <b>budget €</b> (solo admin) e <b>scadenza</b>.</li>
@@ -948,15 +948,15 @@ function renderGuideTab(){
         <h4>Semafori di rischio</h4>
         <table>
           <tr><th>Avviso</th><th>Quando scatta</th></tr>
-          <tr><td>🔴 Scaduta / Fuori budget / Ore esaurite</td><td>Scadenza superata, oppure budget € o ore al 100%</td></tr>
-          <tr><td>🟡 In avvicinamento</td><td>Scadenza entro 14 giorni, oppure budget € o ore oltre l'85%</td></tr>
+          <tr><td><span class="status-dot red"></span> Scaduta / Fuori budget / Ore esaurite</td><td>Scadenza superata, oppure budget € o ore al 100%</td></tr>
+          <tr><td><span class="status-dot orange"></span> In avvicinamento</td><td>Scadenza entro 14 giorni, oppure budget € o ore oltre l'85%</td></tr>
         </table>
         <p>Le commesse <b>completate</b> non generano avvisi.</p>
       </div>
     </details>
 
     <details>
-      <summary>🗂 Gestione anagrafiche: clienti e commesse</summary>
+      <summary>${ico('folder')} Gestione anagrafiche: clienti e commesse</summary>
       <div class="guide-body">
         <h4>Clienti</h4>
         <ul>
@@ -966,40 +966,40 @@ function renderGuideTab(){
         <h4>Commesse</h4>
         <ul>
           <li>Alla creazione il <b>codice</b> (es. <code>012/26</code>) è assegnato automaticamente da un contatore progressivo sul server: niente doppioni anche se due admin creano commesse nello stesso momento.</li>
-          <li>Campi: cliente, nome, referente, <b>budget €</b>, <b>budget ore</b>, <b>scadenza</b>. Tutto modificabile con ✏.</li>
+          <li>Campi: cliente, nome, referente, <b>budget €</b>, <b>budget ore</b>, <b>scadenza</b>. Tutto modificabile con ${ico('edit')}.</li>
           <li><b>Stati</b>: Attivo (registrabile), Completato e Sospeso (non compaiono nell'inserimento rapido).</li>
           <li><b>Attività</b>: ogni commessa ha il suo elenco (es. "Progettazione", "Montaggio"); si aggiungono dal riquadro sotto la commessa e sono richieste per registrare le ore.</li>
-          <li><b>Utenti assegnati</b> (✏ → spunte): se ne selezioni alcuni, solo loro vedranno la commessa nell'inserimento rapido; se lasci vuoto, la vedono tutti.</li>
+          <li><b>Utenti assegnati</b> (${ico('edit')} → spunte): se ne selezioni alcuni, solo loro vedranno la commessa nell'inserimento rapido; se lasci vuoto, la vedono tutti.</li>
         </ul>
         <div class="g-danger">Anche l'eliminazione di una commessa o di una attività cancella le registrazioni collegate. Preferisci lo stato "Completato" o "Sospeso".</div>
       </div>
     </details>
 
     <details>
-      <summary>👤 Gestione utenti: inviti, password, sospensioni</summary>
+      <summary>${ico('user')} Gestione utenti: inviti, password, sospensioni</summary>
       <div class="guide-body">
         <h4>Creare un nuovo utente</h4>
         <ol>
           <li><b>Gestione → Utenti → + Nuovo utente (invito)</b>: nome e cognome, email (sarà il login), username, ruolo.</li>
           <li>Premi <b>Crea e genera link</b>: l'app crea l'account e mostra un <b>link di invito</b>.</li>
-          <li>Copia il link (📋) e invialo alla persona come preferisci (WhatsApp, Teams, email…). Aprendolo imposterà la propria password ed entrerà.</li>
+          <li>Copia il link (${ico('copy')}) e invialo alla persona come preferisci (WhatsApp, Teams, email…). Aprendolo imposterà la propria password ed entrerà.</li>
         </ol>
-        <div class="g-warn">Il link <b>scade in circa 24 ore</b> e vale una volta sola. Se scade prima dell'uso, genera un link di reimpostazione con 🔑 accanto all'utente.</div>
+        <div class="g-warn">Il link <b>scade in circa 24 ore</b> e vale una volta sola. Se scade prima dell'uso, genera un link di reimpostazione con ${ico('key')} accanto all'utente.</div>
         <h4>Reimpostare una password</h4>
         <ul>
-          <li>Bottone <b>🔑</b> accanto all'utente → conferma → si genera un link di reimpostazione da girare a mano. Nessuna email automatica: è una scelta di configurazione (nessun SMTP), così non ci sono limiti di invio.</li>
+          <li>Bottone <b>${ico('key')}</b> accanto all'utente → conferma → si genera un link di reimpostazione da girare a mano. Nessuna email automatica: è una scelta di configurazione (nessun SMTP), così non ci sono limiti di invio.</li>
           <li>Ogni utente può inoltre cambiare la propria password dal menu in alto a destra (serve la password attuale).</li>
         </ul>
         <h4>Sospendere e modificare</h4>
         <ul>
-          <li><b>⏸ Sospendi / ✓ Riattiva</b>: un utente sospeso non può più accedere né scrivere; le sue ore restano nei report. È la via giusta quando qualcuno lascia: <b>non esiste l'eliminazione</b>, così lo storico resta integro.</li>
-          <li><b>✏ Modifica</b>: nome, username e ruolo. L'email non si cambia da qui (è l'identità di accesso: si gestisce dal pannello Supabase → Authentication → Users).</li>
+          <li><b>${ico('pause')} Sospendi / ${ico('check')} Riattiva</b>: un utente sospeso non può più accedere né scrivere; le sue ore restano nei report. È la via giusta quando qualcuno lascia: <b>non esiste l'eliminazione</b>, così lo storico resta integro.</li>
+          <li><b>${ico('edit')} Modifica</b>: nome, username e ruolo. L'email non si cambia da qui (è l'identità di accesso: si gestisce dal pannello Supabase → Authentication → Users).</li>
         </ul>
       </div>
     </details>
 
     <details>
-      <summary>💰 Tariffe: costi, ricavi e storicizzazione</summary>
+      <summary>${ico('euro')} Tariffe: costi, ricavi e storicizzazione</summary>
       <div class="guide-body">
         <p>Le tariffe determinano i valori economici dei report: <b>costo €/h</b> (quanto costa l'ora dell'operatore) e <b>ricavo €/h</b> (quanto viene fatturata al cliente).</p>
         <h4>Specificità</h4>
@@ -1017,12 +1017,12 @@ function renderGuideTab(){
     </details>
 
     <details>
-      <summary>💾 Backup, sincronizzazione e sicurezza dei dati</summary>
+      <summary>${ico('save')} Backup, sincronizzazione e sicurezza dei dati</summary>
       <div class="guide-body">
         <ul>
           <li>I dati vivono su <b>Supabase</b> (Postgres) con backup automatici lato server (Dashboard → Database → Backups).</li>
           <li>Da <b>Gestione → Backup → ⬇ Esporta JSON</b> puoi scaricare periodicamente una copia locale dei dati.</li>
-          <li>L'app riceve le modifiche degli altri utenti <b>in tempo reale</b>; un controllo di sicurezza ogni 60 secondi copre eventuali eventi persi. L'indicatore in alto mostra lo stato: ✓ Sincronizzato, ⟳ in corso, ✗ errore, ○ offline.</li>
+          <li>L'app riceve le modifiche degli altri utenti <b>in tempo reale</b>; un controllo di sicurezza ogni 60 secondi copre eventuali eventi persi. L'indicatore in alto mostra lo stato: ${ico('check')} Sincronizzato, ⟳ in corso, ${ico('close')} errore, ○ offline.</li>
           <li>Il login usa <b>Supabase Auth</b> (email + password verificate dal server, minimo 8 caratteri); la sessione si rinnova da sola.</li>
           <li>La chiave presente nel sorgente dell'app (publishable key) è <b>pubblica per progettazione</b>: senza login non dà accesso a nulla, sono le policy RLS a decidere chi vede cosa.</li>
         </ul>
@@ -1030,7 +1030,7 @@ function renderGuideTab(){
     </details>
 
     <details>
-      <summary>⚙ Configurazione tecnica (Supabase e pubblicazione)</summary>
+      <summary>${ico('settings')} Configurazione tecnica (Supabase e pubblicazione)</summary>
       <div class="guide-body">
         <h4>Architettura</h4>
         <ul>
@@ -1048,9 +1048,9 @@ function renderGuideTab(){
         <h4>Impostazioni del progetto Supabase</h4>
         <ul>
           <li><b>Authentication → Sign In / Up</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); password minimo 8 caratteri.</li>
-          <li><b>Authentication → URL Configuration → Site URL</b>: il <b>link di collegamento</b> (Gestione → Utenti → 🔗), cioè l'indirizzo esatto dell'app con il progetto: è dove atterrano i link quando non ne è indicato un altro.</li>
+          <li><b>Authentication → URL Configuration → Site URL</b>: il <b>link di collegamento</b> (Gestione → Utenti → ${ico('link')}), cioè l'indirizzo esatto dell'app con il progetto: è dove atterrano i link quando non ne è indicato un altro.</li>
           <li><b>Niente SMTP</b> configurato (scelta voluta): nessuna email automatica, i link si distribuiscono a mano e non ci sono limiti di invio.</li>
-          <li><b>Progetto e chiave non stanno nel codice</b> (come in Bomtrack): ogni dispositivo li tiene per sé, inseriti dalla schermata di accesso ("Collega progetto") o arrivati con il <b>link di collegamento</b> (Gestione → Utenti → 🔗). Lo stesso <code>app.js</code> funziona così con progetti Supabase diversi. L'app usa la chiave <b>pubblica</b> (<code>sb_publishable_…</code>); se venisse ruotata, ogni dispositivo va ricollegato con il nuovo link.</li>
+          <li><b>Progetto e chiave non stanno nel codice</b> (come in Bomtrack): ogni dispositivo li tiene per sé, inseriti dalla schermata di accesso ("Collega progetto") o arrivati con il <b>link di collegamento</b> (Gestione → Utenti → ${ico('link')}). Lo stesso <code>app.js</code> funziona così con progetti Supabase diversi. L'app usa la chiave <b>pubblica</b> (<code>sb_publishable_…</code>); se venisse ruotata, ogni dispositivo va ricollegato con il nuovo link.</li>
           <li><b>Redirect URLs</b>: l'indirizzo dell'app seguito da <code>**</code> (es. <code>https://tuodominio.it/timetrack/**</code>), perché i link di invito tornano al link di collegamento.</li>
         </ul>
         <h4>Pubblicare una modifica dell'app</h4>
@@ -1064,15 +1064,15 @@ function renderGuideTab(){
     </details>
 
     <details>
-      <summary>🛠 Risoluzione problemi</summary>
+      <summary>${ico('wrench')} Risoluzione problemi</summary>
       <div class="guide-body">
         <table>
           <tr><th>Sintomo</th><th>Causa probabile e rimedio</th></tr>
           <tr><td>"Generazione non riuscita (401: Invalid credentials)"</td><td>Il gateway della Edge Function sta rifiutando le chiamate: verifica JWT legacy attiva o chiave sbagliata. Vedi la sezione Configurazione tecnica.</td></tr>
-          <tr><td>"Email già registrata" creando un utente</td><td>L'account esiste già: usa il bottone 🔑 per generare un link di reimpostazione.</td></tr>
-          <tr><td>Il link di invito non funziona</td><td>È scaduto (≈24h) o già usato: genera un nuovo link con 🔑.</td></tr>
+          <tr><td>"Email già registrata" creando un utente</td><td>L'account esiste già: usa il bottone ${ico('key')} per generare un link di reimpostazione.</td></tr>
+          <tr><td>Il link di invito non funziona</td><td>È scaduto (≈24h) o già usato: genera un nuovo link con ${ico('key')}.</td></tr>
           <tr><td>Il link apre la pagina sbagliata</td><td>Site URL errata su Supabase (Authentication → URL Configuration).</td></tr>
-          <tr><td>✗ Errore sync in alto</td><td>Problema di rete o permessi: ricarica la pagina; se persiste controlla lo stato di Supabase.</td></tr>
+          <tr><td>${ico('close')} Errore sync in alto</td><td>Problema di rete o permessi: ricarica la pagina; se persiste controlla lo stato di Supabase.</td></tr>
           <tr><td>Un operatore non vede una commessa</td><td>La commessa non è Attiva, oppure ha utenti assegnati e lui non è tra questi.</td></tr>
           <tr><td>Ore senza valore economico nei report</td><td>Alla data della registrazione non esisteva una tariffa applicabile: crea la tariffa con la validità giusta, anche retroattiva — le registrazioni già esistenti in quel periodo vengono ricalcolate automaticamente.</td></tr>
           <tr><td>Modifiche all'app non visibili dopo la pubblicazione</td><td>Cache del browser: refresh forzato con Ctrl+F5.</td></tr>
@@ -1193,10 +1193,10 @@ function openProjectDetail(id){
     ${_a()?`<div class="proj-activities"><strong>Ore per utente:</strong><div class="proj-act-list">${userHtml}</div></div>`:''}
     <div class="proj-activities"><strong>Ultime registrazioni:</strong><div style="margin-top:6px">${recentHtml}</div></div>
     <div class="modal-actions" style="flex-wrap:wrap;gap:6px">
-      ${stBtn('active','● Attivo','var(--green)','rgba(46,174,109,.18)')}
-      ${stBtn('completed','✓ Completato','var(--accent)','rgba(58,123,232,.18)')}
-      ${stBtn('suspended','⏸ Sospeso','var(--orange)','rgba(232,163,58,.18)')}
-      <button class="btn-outline" onclick="editProjectModal('${p.id}')">✏ Modifica</button>
+      ${stBtn('active','● Attivo','var(--green)','var(--green-soft)')}
+      ${stBtn('completed',`${ico('check')} Completato`,'var(--accent)','var(--accent-soft-hi)')}
+      ${stBtn('suspended',`${ico('pause')} Sospeso`,'var(--orange)','var(--orange-soft)')}
+      <button class="btn-outline" onclick="editProjectModal('${p.id}')">${ico('edit')} Modifica</button>
       <button class="add-btn-sm" onclick="closeModal()">Chiudi</button>
     </div>`);
 }
@@ -1204,7 +1204,7 @@ window.openProjectDetail=openProjectDetail;
 
 // ═══ MANAGE ═══
 function renderManage(){
-  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:'💰 Tariffe'},{id:'backup',l:'💾 Backup'},{id:'guide',l:'📖 Guida'}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
+  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:`${ico('euro')} Tariffe`},{id:'backup',l:`${ico('save')} Backup`},{id:'guide',l:`${ico('book')} Guida`}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
   renderMC();
 }
 function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};renderManage()}
@@ -1213,7 +1213,7 @@ function _mgmtFilteredProjects(){
 }
 function _mgmtProjRow(p){
   const cl=db.clients.find(c=>c.id===p.clientId);
-  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">⏰ ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'rgba(46,174,109,.13)':p.status==='completed'?'rgba(58,123,232,.13)':'rgba(232,163,58,.13)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:rgba(46,174,109,.18);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:rgba(58,123,232,.18);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">✓ Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:rgba(232,163,58,.18);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">⏸ Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">✏</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">🗑</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">✏</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">🗑</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
+  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">${ico('clock')} ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'var(--green-soft)':p.status==='completed'?'var(--accent-soft-hi)':'var(--orange-soft)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:var(--green-soft);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:var(--accent-soft-hi);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">${ico('check')} Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:var(--orange-soft);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">${ico('pause')} Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">${ico('edit')}</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">${ico('trash')}</button></div></div><div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('edit')}</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('trash')}</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
 }
 function filterMgmtProjects(){
   mgmtProjectFilter.clientId=document.getElementById('mpf-client').value;
@@ -1224,11 +1224,11 @@ function filterMgmtProjects(){
 function renderMC(){
   const el=document.getElementById('mgmt-content');if(!activeMgmt){el.innerHTML='';return}
   if(activeMgmt==='client'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${c.active?'var(--green)':'#888'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">✏</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">🗑</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'var(--green-soft)':'var(--hairline)'};color:${c.active?'var(--green)':'var(--text-dim)'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">${ico('edit')}</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">${ico('trash')}</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='project'){
     el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'rgba(46,174,109,.13)':'rgba(136,136,136,.13)'};color:${u.active!==false?'var(--green)':'#888'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?'✓ Riattiva':'⏸ Sospendi'}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">✏</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">🔑</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">🔗 Link di collegamento</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'var(--green-soft)':'var(--hairline)'};color:${u.active!==false?'var(--green)':'var(--text-dim)'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?`${ico('check')} Riattiva`:`${ico('pause')} Sospendi`}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">${ico('edit')}</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">${ico('key')}</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">${ico('link')} Link di collegamento</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1254,7 +1254,7 @@ function renderRatesTab(){
     <span class="mgmt-item-meta">${r.costRate!=null?'€'+r.costRate+'/h':'—'}</span>
     <span class="mgmt-item-meta">${r.clientRate!=null?'€'+r.clientRate+'/h':'—'}</span>
     <span class="mgmt-item-meta" style="font-size:11px">dal ${r.from}${r.to?' al '+r.to:''}</span>
-    <div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-rate" data-id="${r.id}">✏</button><button class="mini-btn danger" data-action="delete-rate" data-id="${r.id}">🗑</button></div>
+    <div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-rate" data-id="${r.id}">${ico('edit')}</button><button class="mini-btn danger" data-action="delete-rate" data-id="${r.id}">${ico('trash')}</button></div>
   </div>`;
   el.innerHTML=`<div class="mgmt-panel">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto;gap:8px;padding:4px 0 8px;font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase">
@@ -1290,7 +1290,7 @@ async function addRate(){
 }
 function editRateModal(id){
   const r=db.rates.find(x=>x.id===id);if(!r)return;
-  openModal(`<h3>✏ Modifica Tariffa</h3>
+  openModal(`<h3>${ico('edit')} Modifica Tariffa</h3>
     <div class="modal-field"><label>Utente</label><select id="er-user"><option value="">— Tutti —</option>${db.users.map(u=>`<option value="${u.id}" ${u.id===r.userId?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Cliente</label><select id="er-client"><option value="">— Tutti —</option>${db.clients.map(c=>`<option value="${c.id}" ${c.id===r.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Commessa</label><select id="er-project"><option value="">— Tutte —</option>${db.projects.map(p=>`<option value="${p.id}" ${p.id===r.projectId?'selected':''}>${esc(p.code)} ${esc(p.name)}</option>`).join('')}</select></div>
@@ -1340,7 +1340,7 @@ async function recalcAllRates(){
 
 // CRUD Clients
 async function addClient(){const n=document.getElementById('mc-name').value.trim(),ref=document.getElementById('mc-ref').value.trim(),email=document.getElementById('mc-email').value.trim();if(!n){showToast('Nome richiesto','error');return}const ok=await dbWrite(supa.from('clients').insert({id:gid(),name:n,referente:ref,email,active:true}),n+' aggiunto');if(ok)renderManage()}
-function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>✏ Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${esc(c.name)}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${esc(c.referente||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${esc(c.email||'')}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
+function editClientModal(id){const c=db.clients.find(x=>x.id===id);if(!c)return;openModal(`<h3>${ico('edit')} Modifica Cliente</h3><div class="modal-field"><label>Nome</label><input id="ec-name" value="${esc(c.name)}"></div><div class="modal-field"><label>Referente</label><input id="ec-ref" value="${esc(c.referente||'')}"></div><div class="modal-field"><label>Email</label><input type="email" id="ec-email" value="${esc(c.email||'')}"></div><div class="modal-field"><label>Stato</label><select id="ec-active"><option value="true" ${c.active?'selected':''}>Attivo</option><option value="false" ${!c.active?'selected':''}>Inattivo</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveClientEdit('${id}')">Salva</button></div>`)}
 async function saveClientEdit(id){const c=db.clients.find(x=>x.id===id);if(!c)return;const upd={name:document.getElementById('ec-name').value.trim(),referente:document.getElementById('ec-ref').value.trim(),email:document.getElementById('ec-email').value.trim(),active:document.getElementById('ec-active').value==='true'};closeModal();const ok=await dbWrite(supa.from('clients').update(upd).eq('id',id),'Aggiornato');if(ok)renderManage()}
 async function delClient(id){if(!confirm('Eliminare il cliente e tutte le sue commesse e registrazioni?'))return;const ok=await dbWrite(supa.from('clients').delete().eq('id',id),'Eliminato');if(ok)renderManage()}
 
@@ -1361,7 +1361,7 @@ async function addProject(){
   const ok=await dbWrite(supa.from('project_finance').upsert({project_id:pid,budget:b}),n+' aggiunta');
   if(ok)renderManage();
 }
-function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${safeColor(u.color)};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>✏ Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
+function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${safeColor(u.color)};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>${ico('edit')} Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
 async function saveProjectEdit(id){
   const p=db.projects.find(x=>x.id===id);if(!p)return;
   const upd={
@@ -1395,7 +1395,7 @@ window.setProjectStatus=setProjectStatus;
 
 // CRUD Activities (per project)
 async function addAct(pid){const inp=document.getElementById('sa-'+pid);const n=inp.value.trim();if(!n){showToast('Nome richiesto','error');return}const ok=await dbWrite(supa.from('activities').insert({id:gid(),project_id:pid,name:n}),n+' aggiunta');if(ok)renderManage()}
-function editActModal(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;openModal(`<h3>✏ Modifica Attività</h3><div class="modal-field"><label>Nome</label><input id="ea-name" value="${esc(a.name)}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveActEdit('${pid}','${aid}')">Salva</button></div>`)}
+function editActModal(pid,aid){const p=db.projects.find(x=>x.id===pid);if(!p)return;const a=p.activities?.find(x=>x.id===aid);if(!a)return;openModal(`<h3>${ico('edit')} Modifica Attività</h3><div class="modal-field"><label>Nome</label><input id="ea-name" value="${esc(a.name)}"></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveActEdit('${pid}','${aid}')">Salva</button></div>`)}
 async function saveActEdit(pid,aid){const n=document.getElementById('ea-name').value.trim();closeModal();const ok=await dbWrite(supa.from('activities').update({name:n}).eq('id',aid),'Aggiornata');if(ok)renderManage()}
 async function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return;const ok=await dbWrite(supa.from('activities').delete().eq('id',aid),'Eliminata');if(ok)renderManage()}
 
@@ -1404,7 +1404,7 @@ async function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return
 // solo admin): il browser non tocca mai la service_role key. La funzione
 // restituisce il link di invito da girare alla persona (nessuna email).
 function addUser(){
-  openModal(`<h3>➕ Nuovo utente</h3>
+  openModal(`<h3>${ico('plus')} Nuovo utente</h3>
     <div class="modal-field"><label>Nome e cognome</label><input id="nu-name" placeholder="Mario Rossi"></div>
     <div class="modal-field"><label>Email (sarà il login)</label><input type="email" id="nu-email" placeholder="mario.rossi@azienda.it"></div>
     <div class="modal-field"><label>Username</label><input id="nu-username" placeholder="mario"></div>
@@ -1437,11 +1437,11 @@ async function submitNewUser(){
 }
 // Modal riutilizzabile: mostra un link di invito/recovery con bottone Copia
 function showInviteLinkModal(title,link){
-  openModal(`<h3>✅ ${title}</h3>
+  openModal(`<h3>${ico('check')} ${title}</h3>
     <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Invia questo link alla persona (WhatsApp, Teams, email...). Cliccandolo imposterà la propria password. <b>Scade in circa 24 ore.</b></p>
     <div style="display:flex;gap:8px;align-items:center">
       <input id="il-link" readonly value="${esc(link)}" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
-      <button class="add-btn-sm" onclick="copyInviteLink()">📋 Copia</button>
+      <button class="add-btn-sm" onclick="copyInviteLink()">${ico('copy')} Copia</button>
     </div>
     <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Chiudi</button></div>`);
 }
@@ -1450,7 +1450,7 @@ async function copyInviteLink(){
   try{await navigator.clipboard.writeText(el.value);showToast('Link copiato!')}
   catch(e){el.select();document.execCommand('copy');showToast('Link copiato!')}
 }
-function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>✏ Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email (gestita dall'account di accesso)</label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled style="opacity:.6"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
+function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>${ico('edit')} Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email (gestita dall'account di accesso)</label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled style="opacity:.6"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
 async function saveUserEdit(id){
   const u=db.users.find(x=>x.id===id);if(!u)return;
   const upd={
@@ -1749,7 +1749,7 @@ function exportReportPDF(){
   }
 
   doc.save('report_'+todayStr()+'.pdf');
-  showToast('📄 PDF esportato!');
+  showToast('PDF esportato!');
   closeExportModal();
 }
 
@@ -1803,7 +1803,7 @@ function exportReportExcel(){
   }
 
   XLSX.writeFile(wb,'report_'+todayStr()+'.xlsx');
-  showToast('📗 Excel esportato!');
+  showToast('Excel esportato!');
   closeExportModal();
 }
 
