@@ -308,13 +308,16 @@ tr{border-bottom:1px solid var(--hairline)}
    Misura in em e colore currentColor: l'icona segue il testo che la circonda. */
 .ico{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.125em}
 .ico-w{display:inline-flex;align-items:center;flex:none}
+/* La pastiglia (come in Bomtrack): l'icona sul suo stesso colore al 15%. */
+.ico.pill{box-sizing:content-box;padding:.34em;border-radius:.42em;background:color-mix(in srgb,currentColor 15%,transparent)}
 .section-title .ico,.modal h3 .ico{width:1.1em;height:1.1em}
 .nav-btn .ico{width:15px;height:15px}
 .logo .ico{width:22px;height:22px}
 .mini-btn .ico{width:13px;height:13px}
+.nav-btn.active .ico.pill{background:color-mix(in srgb,currentColor 15%,transparent)}
 .mini-btn.danger .ico,.nav-btn.active .ico,.add-btn .ico,.add-btn-sm .ico,.btn-primary .ico,.export-btn-pdf .ico,.export-btn-xls .ico{color:inherit}
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
 .btn-icon .ico{width:15px;height:15px}
 .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:baseline;margin-right:2px}
 .status-dot.red{background:var(--red)}.status-dot.orange{background:var(--orange)}
-@media print{.ico{color:inherit!important}}
+@media print{.ico{color:inherit!important}.ico.pill{background:none;padding:0}}

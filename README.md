@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.1.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.1.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,11 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.1.1] — 2026-10-21
+
+**Modificato**
+- Colori delle icone allineati a Bomtrack: ogni icona ha la sua tinta costante nei pulsanti, nelle schede e nella guida, e le icone di menu e titoli stanno su una pastiglia colorata.
 
 ### [4.1.0] — 2026-10-21
 

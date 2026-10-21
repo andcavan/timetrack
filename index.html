@@ -64,7 +64,7 @@
   <!-- TIMESHEET -->
   <div id="view-timesheet" class="view-panel active">
     <div class="quick-section">
-      <h2 class="section-title"><svg class="ico ic-bolt tinted" aria-hidden="true"><use href="#ic-bolt"></use></svg> Inserimento Rapido</h2>
+      <h2 class="section-title"><svg class="ico ic-bolt tinted pill" aria-hidden="true"><use href="#ic-bolt"></use></svg> Inserimento Rapido</h2>
       <div class="quick-grid">
         <div class="field-group" style="position:relative">
           <label>Commessa</label>
@@ -97,12 +97,12 @@
   <div id="view-dashboard" class="view-panel">
     <div class="dash-wrap">
       <div class="dash-head">
-        <h2 class="section-title"><svg class="ico ic-chart tinted" aria-hidden="true"><use href="#ic-chart"></use></svg> Report</h2>
+        <h2 class="section-title"><svg class="ico ic-chart tinted pill" aria-hidden="true"><use href="#ic-chart"></use></svg> Report</h2>
       </div>
       
       <!-- Filtri Report -->
       <div class="breakdown-section" style="margin-bottom:24px">
-        <h3 class="sub-title"><svg class="ico ic-search tinted" aria-hidden="true"><use href="#ic-search"></use></svg> Filtri</h3>
+        <h3 class="sub-title"><svg class="ico ic-search tinted pill" aria-hidden="true"><use href="#ic-search"></use></svg> Filtri</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">
           <div>
             <label style="display:block;font-size:13px;color:var(--text-dim);margin-bottom:6px">Periodo</label>
@@ -160,7 +160,7 @@
   <!-- PROJECT REPORTS -->
   <div id="view-projects" class="view-panel">
     <div class="dash-wrap">
-      <h2 class="section-title"><svg class="ico ic-clipboard tinted" aria-hidden="true"><use href="#ic-clipboard"></use></svg> Report Commesse</h2>
+      <h2 class="section-title"><svg class="ico ic-clipboard tinted pill" aria-hidden="true"><use href="#ic-clipboard"></use></svg> Report Commesse</h2>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <input id="prf-search" placeholder="Cerca codice, nome, cliente…" oninput="renderProjectReport()" style="flex:2;min-width:180px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none">
         <select id="prf-client" onchange="renderProjectReport()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option></select>
@@ -186,7 +186,7 @@
   <!-- MANAGE -->
   <div id="view-manage" class="view-panel">
     <div class="manage-wrap">
-      <h2 class="section-title"><svg class="ico ic-settings tinted" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione Anagrafiche</h2>
+      <h2 class="section-title"><svg class="ico ic-settings tinted pill" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione Anagrafiche</h2>
       <div class="mgmt-tabs" id="mgmt-tabs"></div>
       <div id="mgmt-content"></div>
       <div class="cloud-section">
@@ -203,7 +203,7 @@
 <!-- EXPORT REPORT MODAL -->
 <div id="export-modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeExportModal()">
   <div class="modal export-modal">
-    <h3><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta Report</h3>
+    <h3><svg class="ico ic-download tinted pill" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta Report</h3>
 
     <div class="modal-field">
       <label>Titolo report</label>
