@@ -115,6 +115,23 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     rejects(() => op(`select public.next_project_num();`), /riservata agli amministratori/);
   });
 
+  test('note di commessa e attività: vuote per default, scritte dall\'admin, lette dall\'operator', () => {
+    assert.equal(sql(`select note = '' from public.projects where id = 'p1';`), 't');
+    as(A1)(`
+      update public.projects set note = E'Prima riga\\nseconda riga' where id = 'p1';
+      insert into public.activities(id, project_id, name, note) values ('a1', 'p1', 'Montaggio', 'In cantiere');
+      insert into public.activities(id, project_id, name) values ('a2', 'p1', 'Progetto');
+    `);
+    const op = as(OP);
+    assert.equal(op(`select note from public.projects where id = 'p1';`), 'Prima riga\nseconda riga');
+    assert.equal(op(`select string_agg(id || '=' || note, ',' order by id) from public.activities;`), 'a1=In cantiere,a2=');
+    // La RLS nasconde le righe all'update dell'operator: nessuna riga cambia
+    op(`update public.projects set note = 'x' where id = 'p1'; update public.activities set note = 'x';`);
+    assert.equal(sql(`select note from public.projects where id = 'p1';`), 'Prima riga\nseconda riga');
+    assert.equal(sql(`select note from public.activities where id = 'a1';`), 'In cantiere');
+    rejects(() => op(`insert into public.activities(id, project_id, name, note) values ('a3', 'p1', 'X', 'y');`), /row-level security/);
+  });
+
   test('modificare una tariffa ricalcola le ore già registrate', () => {
     as(A1)(`update public.rates set cost_rate = 40 where id = 'r1';`);
     assert.equal(sql(`select string_agg(cost_rate::text, ',' order by entry_id) from public.entry_costs;`), '40,40');
@@ -161,6 +178,15 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     for (const t of ['profiles', 'clients', 'entries', 'rates']) {
       rejects(() => asRole('anon')(`select count(*) from public.${t};`), /permission denied/);
     }
+  });
+
+  test('un database di prima della 4.3.0 riceve le colonne delle note', () => {
+    sql(`alter table public.activities drop column note; alter table public.projects drop column note;`);
+    sql(SCHEMA);
+    assert.equal(sql(`select string_agg(table_name || '.' || column_name || ':' || is_nullable || ':' || column_default, ',' order by table_name)
+      from information_schema.columns where table_schema = 'public' and column_name = 'note' and table_name in ('projects','activities');`),
+      "activities.note:NO:''::text,projects.note:NO:''::text");
+    assert.equal(sql(`select count(*) from public.activities where note = '';`), '2');
   });
 
   test('lo schema si riesegue senza errori e senza perdere dati', () => {

@@ -56,8 +56,11 @@ create table if not exists public.projects (
   status         text not null default 'active' check (status in ('active','completed','suspended')),
   budget_hours   numeric default 0,
   deadline       date,
-  assigned_users uuid[] not null default '{}'   -- vuoto = visibile a tutti
+  assigned_users uuid[] not null default '{}',  -- vuoto = visibile a tutti
+  note           text not null default ''
 );
+-- 4.3.0: note libere sulla commessa (database creati prima di questa versione)
+alter table public.projects add column if not exists note text not null default '';
 create index if not exists projects_client_idx on public.projects(client_id);
 
 -- Budget € separato: leggibile solo dagli admin
@@ -70,8 +73,11 @@ create table if not exists public.project_finance (
 create table if not exists public.activities (
   id         text primary key default gen_random_uuid()::text,
   project_id text not null references public.projects(id) on delete cascade,
-  name       text not null
+  name       text not null,
+  note       text not null default ''
 );
+-- 4.3.0: note libere sull'attività (database creati prima di questa versione)
+alter table public.activities add column if not exists note text not null default '';
 create index if not exists activities_project_idx on public.activities(project_id);
 
 -- RATES (user/client/project null = "tutti"; risoluzione a priorità)
