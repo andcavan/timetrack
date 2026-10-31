@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='4.3.0';
+const APP_VERSION='4.3.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -1119,7 +1119,8 @@ function renderProjectReport(){
   if(csel)csel.innerHTML='<option value="">— Tutti i clienti —</option>'+db.clients.map(c=>`<option value="${c.id}" ${f.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const projs=db.projects.filter(p=>{
     if(f.status&&p.status!==f.status)return false;
-    if(!(p.status==='active'||db.entries.some(e=>e.projectId===p.id)))return false;
+    // Senza filtro di stato si nascondono solo le completate senza ore: attive e sospese restano sempre visibili.
+    if(!f.status&&p.status==='completed'&&!db.entries.some(e=>e.projectId===p.id))return false;
     if(f.clientId&&p.clientId!==f.clientId)return false;
     if(f.search){const cl=db.clients.find(c=>c.id===p.clientId);if(!(((p.code||'')+' '+p.name+' '+(cl?.name||'')).toLowerCase().includes(f.search)))return false}
     return true;
