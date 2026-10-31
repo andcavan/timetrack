@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='4.3.1';
+const APP_VERSION='4.4.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -474,11 +474,16 @@ function renderHeader(){
   const pill=document.getElementById('user-pill');
   pill.style.borderColor=safeColor(currentUser.color);
   pill.innerHTML=`<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}`;
-  const tabs=[{id:'timesheet',label:'Ore',icon:`${ico('calendar','tinted pill')}`},{id:'dashboard',label:'Report',icon:`${ico('chart','tinted pill')}`},{id:'projects',label:'Commesse',icon:`${ico('clipboard','tinted pill')}`}];
-  if(_a())tabs.push({id:'manage',label:'Gestione',icon:`${ico('settings','tinted pill')}`});
+  const tabs=[{id:'timesheet',label:'Ore',icon:`${ico('calendar','tinted pill')}`},{id:'dashboard',label:'Report',icon:`${ico('chart','tinted pill')}`}];
+  if(_a())tabs.push({id:'projects',label:'Commesse',icon:`${ico('clipboard','tinted pill')}`},{id:'manage',label:'Gestione',icon:`${ico('settings','tinted pill')}`});
   document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
 }
+// Viste riservate all'admin: chi non lo è torna su Ore anche se la chiede
+// dalla console (setView('projects')).
+const ADMIN_VIEWS=['projects','manage'];
+function canSeeView(v){return _a()||!ADMIN_VIEWS.includes(v)}
 function setView(v){
+  if(!canSeeView(v))v='timesheet';
   currentView=v;document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('view-'+v)?.classList.add('active');renderHeader();
   ({timesheet:renderTimesheet,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[v]?.();
@@ -895,6 +900,7 @@ function renderGuideTab(){
           <tr><td>Vedere le ore</td><td>Solo le proprie</td><td>Di tutti gli utenti</td></tr>
           <tr><td>Costi, ricavi, budget €</td><td>Mai visibili (il server non li invia proprio)</td><td>Visibili ovunque</td></tr>
           <tr><td>Anagrafiche (clienti, commesse, attività)</td><td>Sola lettura</td><td>Creazione, modifica, eliminazione</td></tr>
+          <tr><td>Report Commesse</td><td>Non accessibile</td><td>Tab Commesse</td></tr>
           <tr><td>Utenti, tariffe, backup, guida</td><td>Non accessibili</td><td>Tab Gestione</td></tr>
         </table>
         <ul>
@@ -1195,6 +1201,7 @@ function projectTone(p,st){
   return{key:'active',label:'Attiva'};
 }
 function openProjectDetail(id){
+  if(!_a())return;
   const p=db.projects.find(x=>x.id===id);if(!p)return;
   const cl=db.clients.find(c=>c.id===p.clientId);
   const st=projectStats(p);

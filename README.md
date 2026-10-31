@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.3.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.4.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,11 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.4.0] — 2026-10-31
+
+**Modificato**
+- La pagina **Commesse** (report delle commesse con il dettaglio di ogni commessa) è ora riservata agli admin: per un operatore la scheda non compare più nel menu e la pagina non si apre nemmeno chiamandola dalla console del browser. L'operatore continua a scegliere le commesse quando registra le ore e a vedere il riepilogo per commessa delle proprie ore nel Report.
 
 ### [4.3.1] — 2026-10-31
 
