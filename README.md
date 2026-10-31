@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.2.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.3.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,19 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.3.0] — 2026-10-31
+
+> **Prima di pubblicare questa versione riesegui `supabase/schema.sql`** nel SQL Editor di Supabase: aggiunge le colonne delle note a commesse e attività senza toccare i dati. Finché non lo fai, il salvataggio di una commessa o di un'attività risponde «Database da aggiornare».
+
+**Aggiunto**
+- Campo **Note** (testo libero, anche su più righe) per le commesse: si compila alla creazione in Gestione → Commesse o dalla finestra Modifica Commessa.
+- Campo **Note** per le attività, dalla finestra Modifica Attività (pulsante Modifica accanto all'attività).
+- Le note si vedono in Gestione → Commesse (sotto la commessa e sotto il nome di ogni attività), sulla scheda del report Commesse (le prime righe della nota della commessa; passando sopra un'attività compare la sua nota) e per intero nel dettaglio della commessa, in un riquadro «Note». Le leggono tutti gli utenti che vedono la commessa; le scrive solo l'admin, come gli altri campi.
+- Le note sono incluse nell'export JSON del Backup.
+
+**Corretto**
+- La finestra Modifica Attività non accetta più un nome vuoto.
 
 ### [4.2.0] — 2026-10-31
 
