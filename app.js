@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='4.1.1';
+const APP_VERSION='4.2.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -1146,25 +1146,46 @@ function renderProjectReport(){
   if(!rows.length){g.innerHTML='<p class="empty-text">Nessuna commessa</p>';return}
   g.innerHTML=rows.map(({p,st,risk})=>{
     const cl=db.clients.find(c=>c.id===p.clientId);
+    const tone=projectTone(p,st);
     let dlI='',dlP=0,dlC='var(--green)';
     if(p.deadline){const diff=st.dlDiff;
       if(diff<0){dlI=`Scaduta da ${Math.abs(diff)}gg`;dlC='var(--red)';dlP=100}
       else if(diff<30){dlI=`${diff}gg rimasti`;dlC='var(--orange)';dlP=80}
-      else{dlI=`${diff}gg rimasti`;dlP=Math.min(30,100)}}
+      else{dlI=`${diff}gg rimasti`;dlP=30}}
     const hC=st.hP>90?'var(--red)':st.hP>70?'var(--orange)':'var(--accent)';
     const bC=st.bP>90?'var(--red)':st.bP>70?'var(--orange)':'var(--green)';
-    const sC=p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)';
-    const sL=p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso';
-    const riskBadge=risk.level?`<span class="proj-risk-badge ${risk.level}">${risk.label}</span>`:'';
-    return`<div class="proj-card" style="cursor:pointer" onclick="openProjectDetail('${p.id}')">
-      <div class="proj-card-head"><div><div class="proj-card-title">${esc(p.code||'—')} - ${esc(p.name)}</div><div class="proj-card-client">${esc(cl?.name||'?')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${riskBadge}<span class="proj-status" style="background:${sC}22;color:${sC}">${sL}</span></div></div>
-      <div class="proj-meters">
-        <div><div class="proj-meter-label"><span>Ore</span><span style="font-family:var(--mono);font-weight:600">${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.hP}%;background:${hC}"></div></div></div>
-        ${_a()&&p.budget?`<div><div class="proj-meter-label"><span>Budget</span><span style="font-family:var(--mono);font-weight:600">€${st.uB.toFixed(0)} / €${p.budget}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${st.bP}%;background:${bC}"></div></div></div>`:''}
-        ${p.deadline?`<div><div class="proj-meter-label"><span>Scadenza: ${fmtDate(p.deadline)}</span><span style="color:${dlC};font-weight:600">${dlI}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${dlP}%;background:${dlC}"></div></div></div>`:''}
+    // «Scaduta» è già detto dal colore della riga: il badge resta per ore e budget.
+    const riskBadge=risk.level&&risk.label!=='Scaduta'?`<span class="proj-risk-badge ${risk.level}">${risk.label}</span>`:'';
+    const acts=(p.activities||[]).map(a=>({name:a.name,h:st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0)}));
+    const maxA=Math.max(0,...acts.map(a=>a.h));
+    const meter=(label,val,pct,col)=>`<div><div class="proj-meter-label"><span>${label}</span><span class="proj-meter-val"${col?` style="color:${col}"`:''}>${val}</span></div><div class="proj-meter-track"><div class="proj-meter-fill" style="width:${pct}%;background:${col||'var(--accent)'}"></div></div></div>`;
+    return`<div class="proj-card tone-${tone.key}" onclick="openProjectDetail('${p.id}')">
+      <div class="proj-card-bar">
+        <div class="proj-card-title" title="${esc(p.code||'—')} - ${esc(p.name)}">${esc(p.code||'—')} - ${esc(p.name)}</div>
+        <div class="proj-card-client">${esc(cl?.name||'?')}</div>
+        <span class="proj-card-state">${tone.label}</span>
       </div>
-      <div class="proj-activities"><strong>Attività:</strong><div class="proj-act-list">${(p.activities||[]).map(a=>{const aH=st.pe.filter(e=>e.activityId===a.id).reduce((s,e)=>s+e.hours,0);return`<span class="proj-act-tag">${esc(a.name)} <b style="color:var(--accent)">${aH}h</b></span>`}).join('')}${!p.activities?.length?'<span style="font-style:italic">Nessuna</span>':''}</div></div>
+      <div class="proj-card-body">
+        ${riskBadge?`<div class="proj-card-flags">${riskBadge}</div>`:''}
+        <div class="proj-meters">
+          ${meter('Ore',`${st.uH.toFixed(1)} / ${p.budgetHours||'∞'}h`,st.hP,hC)}
+          ${_a()&&p.budget?meter('Budget',`€${st.uB.toFixed(0)} / €${p.budget}`,st.bP,bC):''}
+          ${p.deadline?meter(`Scadenza ${fmtDate(p.deadline)}`,dlI,dlP,dlC):''}
+        </div>
+        <div class="proj-card-acts">
+          <div class="proj-card-acts-head">Attività</div>
+          ${acts.length?acts.map(a=>`<div class="proj-card-act"><span class="proj-card-act-name">${esc(a.name)}</span><span class="proj-card-act-bar"><i style="width:${maxA?a.h/maxA*100:0}%"></i></span><span class="proj-card-act-h">${+a.h.toFixed(2)}h</span></div>`).join(''):'<div class="proj-card-act-empty">Nessuna attività</div>'}
+        </div>
+      </div>
     </div>`}).join('');
+}
+// Colore della riga superiore della scheda: completata (blu) prevale, poi
+// scaduta (rosso), sospesa (giallo), attiva (verde).
+function projectTone(p,st){
+  if(p.status==='completed')return{key:'done',label:'Completata'};
+  if(st.dlDiff!==null&&st.dlDiff<0)return{key:'late',label:'Scaduta'};
+  if(p.status==='suspended')return{key:'hold',label:'Sospesa'};
+  return{key:'active',label:'Attiva'};
 }
 function openProjectDetail(id){
   const p=db.projects.find(x=>x.id===id);if(!p)return;

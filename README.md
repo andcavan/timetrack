@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.1.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.2.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,11 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.2.0] — 2026-10-31
+
+**Modificato**
+- Nuova scheda del report Commesse. In alto una riga con «codice - nome commessa» e cliente, colorata secondo lo stato: verde attiva, giallo sospesa, blu completata, rosso scaduta (scadenza passata e non completata). Sotto le barre di ore, budget e scadenza; in fondo l'elenco delle attività, ciascuna con le sue ore e una barretta di confronto. L'avviso «Ore/Budget quasi esauriti» resta come etichetta sotto la riga colorata.
 
 ### [4.1.1] — 2026-10-21
 
