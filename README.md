@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.3.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 4.3.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,11 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [4.3.1] — 2026-10-31
+
+**Corretto**
+- Report Commesse: le commesse sospese senza ore registrate non comparivano. Ora attive e sospese si vedono sempre; le completate senza ore restano nascoste, ma compaiono scegliendo il filtro «Completato».
 
 ### [4.3.0] — 2026-10-31
 
