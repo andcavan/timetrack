@@ -41,7 +41,7 @@ Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modific
 
 **Aggiunto**
 - **Timer avvia/ferma** nell'Inserimento Rapido: scegli commessa e attività e premi «Avvia timer». Il timer sta sul database, quindi resta acceso chiudendo la pagina e si vede da ogni dispositivo; mentre corre c'è un riquadro con il tempo che scorre e un contatore in alto accanto all'ora. «Ferma e registra» crea la registrazione con orario di inizio e fine; «Annulla» lo butta via.
-- **Orario «dalle/alle»** facoltativo, nell'Inserimento Rapido e nella Modifica Registrazione: le ore si calcolano da sole (il calcolo lo rifà il database, che è quello che conta). L'orario compare sulla scheda della registrazione, nelle Registrazioni filtrate del Report e come colonna «Orario» nell'export Excel/PDF. Scrivere le ore a mano toglie l'orario.
+- **Orario «dalle/alle»** facoltativo, nell'Inserimento Rapido e nella Modifica Registrazione: le ore si calcolano da sole (il calcolo lo rifà il database, che è quello che conta). L'orario compare sulla scheda della registrazione, nelle Registrazioni filtrate del Report e come colonna «Orario» nell'export Excel/PDF. Scrivere le ore a mano toglie l'orario. I due campi stanno affiancati e si leggono per intero, anche da telefono.
 - **Duplica** su ogni registrazione: la copia sul giorno selezionato della settimana.
 - **Copia settimana prec.**: copia nella settimana mostrata le proprie registrazioni della settimana precedente; quelle su commesse non più attive restano fuori, e prima di copiare l'app dice quante sono.
 - **Andamento nel tempo** nel Report: grafico delle ore per giorno, settimana o mese (secondo la lunghezza del periodo filtrato), con la media; passando sopra una barra si leggono le ore esatte.

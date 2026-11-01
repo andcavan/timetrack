@@ -394,3 +394,6 @@ tr{border-bottom:1px solid var(--hairline)}
 .al-chgs{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px}
 .al-chg{font-size:12px;color:var(--text-dim)}
 .al-chg b{color:var(--text);font-weight:600}
+/* L'orario ha due campi: occupa due colonne della griglia, altrimenti l'ora si taglia */
+@media(min-width:560px){.quick-grid .field-time{grid-column:span 2}}
+.time-pair input[type=time]{padding-left:10px;padding-right:8px;min-width:96px}
