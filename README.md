@@ -238,7 +238,7 @@ Comunica a tutti, con qualche giorno di anticipo:
 2. Menu a sinistra → **SQL Editor** → **New query**.
 3. Apri il file `supabase/schema.sql` in VS Code, seleziona tutto (`Ctrl+A`), copia (`Ctrl+C`).
 4. Incolla nel SQL Editor (`Ctrl+V`) e premi **Run** (o `Ctrl+Invio`).
-5. **Risultato atteso:** in fondo compare una tabella con 9 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`) tutte con `rowsecurity = true`.
+5. **Risultato atteso:** in fondo compare una tabella con 12 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`, `timers`, `project_templates`, `audit_log`) tutte con `rowsecurity = true`.
 
 > Le nuove tabelle convivono con la vecchia `timetrack_data`: la vecchia app continua a funzionare come prima.
 > Lo script si può rilanciare: crea solo ciò che manca e non tocca i dati.
