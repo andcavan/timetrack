@@ -52,6 +52,7 @@
   </div>
   <nav class="nav" id="main-nav"></nav>
   <div class="header-right">
+    <button class="timer-chip" id="timer-chip" style="display:none" onclick="setView('timesheet')" title="Timer in corso: vai a Ore"></button>
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
     <button class="logout-btn btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
@@ -65,6 +66,7 @@
   <div id="view-timesheet" class="view-panel active">
     <div class="quick-section">
       <h2 class="section-title"><svg class="ico ic-bolt tinted pill" aria-hidden="true"><use href="#ic-bolt"></use></svg> Inserimento Rapido</h2>
+      <div id="timer-bar" class="timer-bar" style="display:none"></div>
       <div class="quick-grid">
         <div class="field-group" style="position:relative">
           <label>Commessa</label>
@@ -75,11 +77,15 @@
         <div class="field-group"><label>Cliente</label><input type="text" id="qe-client-display" disabled style="background:var(--card);cursor:not-allowed"></div>
         <div class="field-group"><label>Attività</label><select id="qe-activity" disabled><option value="">—</option></select></div>
         <div class="field-group"><label>Data</label><input type="date" id="qe-date"></div>
-        <div class="field-group"><label>Ore</label><input type="number" id="qe-hours" min="0.25" max="24" step="0.25" placeholder="0"></div>
+        <div class="field-group"><label>Orario <span class="label-opt">facoltativo</span></label><div class="time-pair"><input type="time" id="qe-start" aria-label="Dalle" oninput="syncTimes('qe')"><span>–</span><input type="time" id="qe-end" aria-label="Alle" oninput="syncTimes('qe')"></div></div>
+        <div class="field-group"><label>Ore</label><input type="number" id="qe-hours" min="0.25" max="24" step="0.25" placeholder="0" oninput="hoursTyped('qe')"></div>
         <div class="field-group"><label>Nota</label><input type="text" id="qe-note" placeholder="opzionale"></div>
       </div>
       <div class="quick-hours" id="quick-hours"></div>
-      <button class="add-btn" onclick="addEntry()"><svg class="ico ic-check" aria-hidden="true"><use href="#ic-check"></use></svg> Registra Ore</button>
+      <div class="quick-actions">
+        <button class="add-btn" onclick="addEntry()"><svg class="ico ic-check" aria-hidden="true"><use href="#ic-check"></use></svg> Registra Ore</button>
+        <button class="btn-outline timer-start-btn" id="timer-start-btn" onclick="startTimer()" title="Avvia un timer sulla commessa e attività scelte: allo stop le ore si registrano da sole"><svg class="ico ic-play tinted" aria-hidden="true"><use href="#ic-play"></use></svg> Avvia timer</button>
+      </div>
     </div>
     <div class="week-section">
       <div class="week-nav">
@@ -87,6 +93,7 @@
         <span class="week-label" id="week-label"></span>
         <button class="week-arrow" onclick="changeWeek(1)">▶</button>
         <button class="week-arrow" onclick="goToday()" style="margin-left:8px">OGGI</button>
+        <button class="week-arrow" onclick="copyPrevWeek()" title="Copia le tue registrazioni della settimana precedente in questa"><svg class="ico ic-copy tinted" aria-hidden="true"><use href="#ic-copy"></use></svg> Copia settimana prec.</button>
         <span class="week-total" id="week-total">0h</span>
       </div>
       <div class="week-grid" id="week-grid"></div>
@@ -151,6 +158,7 @@
       </div>
       
       <div class="kpi-row" id="kpi-row"></div>
+      <div class="breakdown-section"><h3 class="sub-title">Andamento nel tempo</h3><div id="trend-chart"></div></div>
       <div class="breakdown-section"><h3 class="sub-title">Dettaglio per Cliente</h3><div id="client-breakdown"></div></div>
       <div class="breakdown-section"><h3 class="sub-title">Dettaglio per Commessa</h3><div id="project-breakdown"></div></div>
       <div class="breakdown-section"><h3 class="sub-title">Registrazioni filtrate</h3><div class="table-wrap" id="recent-table"></div></div>
@@ -213,6 +221,7 @@
     <div class="export-section-title">Colonne da includere</div>
     <div class="export-col-grid" id="exp-columns">
       <div class="export-check-item"><input type="checkbox" id="exp-col-date" checked><label for="exp-col-date">Data</label></div>
+      <div class="export-check-item"><input type="checkbox" id="exp-col-time"><label for="exp-col-time">Orario</label></div>
       <div class="export-check-item" id="exp-col-user-wrap"><input type="checkbox" id="exp-col-user" checked><label for="exp-col-user">Utente</label></div>
       <div class="export-check-item"><input type="checkbox" id="exp-col-client" checked><label for="exp-col-client">Cliente</label></div>
       <div class="export-check-item"><input type="checkbox" id="exp-col-project" checked><label for="exp-col-project">Commessa</label></div>

@@ -38,6 +38,11 @@ const ICONS = {
   bolt: '<path d="M13.4 2.8 5 13.4h6l-1 7.8 8.4-10.6h-6z"/>',
   plug: '<path d="M9 3v5M15 3v5"/><path d="M6.4 8h11.2v3.2a5.6 5.6 0 0 1-11.2 0z"/><path d="M12 16.8V21"/>',
   dot: '<circle cx="12" cy="12" r="5"/>',
+  play: '<path d="M7.4 4.8v14.4a.9.9 0 0 0 1.4.8l11-7.2a.9.9 0 0 0 0-1.6l-11-7.2a.9.9 0 0 0-1.4.8z"/>',
+  stop: '<rect x="5.6" y="5.6" width="12.8" height="12.8" rx="2"/>',
+  download: '<path d="M12 3.6v11.6"/><path d="m7.2 10.6 4.8 4.8 4.8-4.8"/><path d="M4.2 16.4v2.4a1.8 1.8 0 0 0 1.8 1.8h12a1.8 1.8 0 0 0 1.8-1.8v-2.4"/>',
+  history: '<path d="M3.8 12a8.2 8.2 0 1 0 2.4-5.8"/><path d="M3.6 3.8v4.6h4.6"/><path d="M12 7.6v4.6l3.2 1.9"/>',
+  layers: '<path d="m12 3.4 8.6 4.4-8.6 4.4-8.6-4.4z"/><path d="m3.4 12 8.6 4.4 8.6-4.4"/><path d="m3.4 16.2 8.6 4.4 8.6-4.4"/>',
 };
 
 // Tinta costante per icona, dalla tavolozza dell'app (come in Bomtrack):
@@ -49,7 +54,8 @@ const ICON_TINT = {
   file: 'red', sheet: 'green', euro: 'green', trend: 'green', chart: 'purple',
   clipboard: 'accent', calendar: 'accent', settings: 'text-dim', book: 'text-dim',
   cloud: 'accent', save: 'accent', users: 'accent', user: 'accent', wrench: 'purple',
-  folder: 'orange', bolt: 'orange', plug: 'accent', dot: 'accent'
+  folder: 'orange', bolt: 'orange', plug: 'accent', dot: 'accent',
+  play: 'green', stop: 'red', download: 'accent', history: 'purple', layers: 'orange'
 };
 
 function icoEsc(s) {

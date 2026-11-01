@@ -347,3 +347,50 @@ tr{border-bottom:1px solid var(--hairline)}
 .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:baseline;margin-right:2px}
 .status-dot.red{background:var(--red)}.status-dot.orange{background:var(--orange)}
 @media print{.ico{color:inherit!important}.ico.pill{background:none;padding:0}}
+
+/* ─── 5.0.0: orario, timer, andamento, modelli, registro ─── */
+.label-opt{font-weight:400;text-transform:none;letter-spacing:0;opacity:.8}
+.time-pair{display:flex;align-items:center;gap:6px}
+.time-pair input{min-width:0;flex:1}
+.time-pair span{color:var(--text-dim)}
+.modal-field .time-pair input{flex:1}
+.quick-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.timer-start-btn{display:inline-flex;align-items:center;gap:6px;padding:11px 18px;font-size:14px}
+.timer-bar{align-items:center;gap:12px;flex-wrap:wrap;background:var(--green-soft);border:1px solid var(--green);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+.timer-dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex-shrink:0;animation:timerPulse 1.4s ease-in-out infinite}
+@keyframes timerPulse{50%{opacity:.35}}
+.timer-info{flex:1;min-width:160px}
+.timer-what{font-weight:600;font-size:14px}
+.timer-sub{font-size:12px;color:var(--text-dim)}
+.timer-elapsed{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--text)}
+.timer-stop{background:var(--red-solid)}.timer-stop:hover{background:var(--red-h)}
+.timer-chip{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);cursor:pointer}
+.entry-time{display:block;font-size:10px;font-weight:500;color:var(--text-dim);font-family:var(--mono)}
+.cell-sub{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
+.trend-meta{font-size:12px;color:var(--text-dim);margin-bottom:10px}
+.trend{display:flex;gap:8px;height:180px}
+.trend-axis{display:flex;flex-direction:column;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--text-dim);text-align:right;padding-bottom:18px;min-width:30px}
+.trend-axis span{line-height:0}
+.trend-plot{flex:1;min-width:0;display:flex;flex-direction:column}
+.trend-area{position:relative;flex:1}
+.trend-grid{position:absolute;left:0;right:0;border-top:1px solid var(--border);opacity:.6}
+.trend-bars{position:absolute;inset:0;display:flex;gap:2px}
+.trend-col{flex:1;min-width:0;display:flex;align-items:flex-end;border-radius:4px}
+.trend-col:hover{background:var(--accent-soft)}
+.trend-bar{background:var(--accent);border-radius:4px 4px 0 0;width:70%;max-width:40px;margin:0 auto}
+.trend-xs{display:flex;gap:2px;height:18px;align-items:flex-end}
+.trend-xs span{flex:1;min-width:0;text-align:center;font-size:10px;font-family:var(--mono);color:var(--text-dim);white-space:nowrap;overflow:visible}
+.mgmt-hint{font-size:13px;color:var(--text-dim);margin:0 0 12px}
+.mgmt-panel .mgmt-form+.mgmt-form{margin-top:10px}
+#tpl-from{max-width:320px}
+#mp-template{max-width:260px}
+.tpl-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.audit-table td{vertical-align:top}
+.al-when{font-family:var(--mono);font-size:12px;white-space:nowrap;color:var(--text-dim)}
+.al-act{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px}
+.al-insert{background:var(--green-soft);color:var(--green)}
+.al-update{background:var(--accent-soft);color:var(--accent)}
+.al-delete{background:var(--red-soft);color:var(--red)}
+.al-chgs{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px}
+.al-chg{font-size:12px;color:var(--text-dim)}
+.al-chg b{color:var(--text);font-weight:600}
