@@ -102,8 +102,22 @@ create table if not exists public.entries (
   date        date not null,
   hours       numeric not null check (hours > 0 and hours <= 24),
   note        text default '',
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  start_time  time,                              -- orario facoltativo (5.0.0)
+  end_time    time
 );
+-- 5.0.0: orario «dalle/alle» facoltativo (database creati prima di questa
+-- versione). Con l'orario le ore le calcola il trigger entries_ore_da_orario;
+-- senza, restano quelle scritte a mano. Niente turni a cavallo della mezzanotte.
+alter table public.entries add column if not exists start_time time;
+alter table public.entries add column if not exists end_time time;
+do $$ begin
+  if not exists (select 1 from pg_constraint
+                 where conname = 'entries_orario_check' and conrelid = 'public.entries'::regclass) then
+    alter table public.entries add constraint entries_orario_check
+      check ((start_time is null) = (end_time is null) and (start_time is null or end_time > start_time));
+  end if;
+end $$;
 create index if not exists entries_user_date_idx on public.entries(user_id, date);
 create index if not exists entries_project_idx on public.entries(project_id);
 create index if not exists entries_date_idx on public.entries(date);
@@ -120,6 +134,43 @@ create table if not exists public.app_settings (
   key   text primary key,
   value text not null
 );
+
+-- TIMER (5.0.0): al massimo uno in corso per utente. Allo stop l'app lo
+-- trasforma in una registrazione e lo cancella. Sta sul database e non nel
+-- browser, così si ferma anche da un altro dispositivo.
+create table if not exists public.timers (
+  user_id     uuid primary key references public.profiles(id) on delete cascade,
+  project_id  text not null references public.projects(id) on delete cascade,
+  activity_id text references public.activities(id) on delete set null,
+  note        text not null default '',
+  started_at  timestamptz not null default now()
+);
+
+-- MODELLI DI COMMESSA (5.0.0): un elenco di attività ({name, note}) da cui
+-- far nascere una commessa nuova — solo admin
+create table if not exists public.project_templates (
+  id         text primary key default gen_random_uuid()::text,
+  name       text not null check (btrim(name) <> ''),
+  activities jsonb not null default '[]'::jsonb check (jsonb_typeof(activities) = 'array')
+);
+
+-- REGISTRO DELLE MODIFICHE (5.0.0): chi ha creato, modificato o eliminato
+-- ore, commesse, attività, clienti, tariffe, budget e modelli, e quando.
+-- Lo scrive solo il trigger audit_registra; lo legge solo l'admin (contiene
+-- tariffe e budget). In una modifica old_data/new_data hanno solo i campi
+-- cambiati. actor nullo = SQL Editor o service_role.
+create table if not exists public.audit_log (
+  id         bigint generated always as identity primary key,
+  at         timestamptz not null default now(),
+  actor      uuid,
+  table_name text not null,
+  row_id     text not null,
+  action     text not null check (action in ('insert','update','delete')),
+  old_data   jsonb,
+  new_data   jsonb
+);
+create index if not exists audit_log_at_idx on public.audit_log(at desc);
+create index if not exists audit_log_row_idx on public.audit_log(table_name, row_id);
 
 -- ═══════════════════════════════════════════════════════════
 -- 2. FUNZIONI E TRIGGER
@@ -173,6 +224,57 @@ begin
   into o_cost, o_client;
   o_cost := coalesce(o_cost, 0);
   o_client := coalesce(o_client, 0);
+end $$;
+
+-- Orario «dalle/alle»: le ore sono la sua durata, arrotondata al centesimo
+-- (l'app fa lo stesso conto, ma decide il server). Prima dei vincoli: un
+-- orario rovesciato dà ore ≤ 0 e la riga viene rifiutata.
+create or replace function public.entries_ore_da_orario() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.start_time is not null and new.end_time is not null then
+    new.hours := round(extract(epoch from (new.end_time - new.start_time)) / 3600.0, 2);
+  end if;
+  return new;
+end $$;
+drop trigger if exists entries_ore_da_orario on public.entries;
+create trigger entries_ore_da_orario before insert or update on public.entries
+  for each row execute function public.entries_ore_da_orario();
+
+-- Registro delle modifiche: una riga per ogni insert/update/delete delle
+-- tabelle collegate qui sotto. Un update che non cambia nulla non si registra.
+create or replace function public.audit_registra() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; o jsonb; n jsonb; k text; v jsonb;
+begin
+  if tg_op = 'DELETE' then
+    r := to_jsonb(old); o := r;
+  elsif tg_op = 'INSERT' then
+    r := to_jsonb(new); n := r;
+  else
+    r := to_jsonb(new); o := '{}'::jsonb; n := '{}'::jsonb;
+    for k, v in select key, value from jsonb_each(r) loop
+      if (to_jsonb(old) -> k) is distinct from v then
+        o := o || jsonb_build_object(k, to_jsonb(old) -> k);
+        n := n || jsonb_build_object(k, v);
+      end if;
+    end loop;
+    if n = '{}'::jsonb then return null; end if;
+  end if;
+  insert into public.audit_log(actor, table_name, row_id, action, old_data, new_data)
+  values (auth.uid(), tg_table_name, coalesce(r->>'id', r->>'project_id', '?'), lower(tg_op), o, n);
+  return null;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['entries','clients','projects','activities','rates',
+                           'project_finance','project_templates'] loop
+    execute format('drop trigger if exists %I on public.%I', t || '_audit', t);
+    execute format('create trigger %I after insert or update or delete on public.%I
+                    for each row execute function public.audit_registra()', t || '_audit', t);
+  end loop;
 end $$;
 
 -- Ricalcola e salva il costo/ricavo di UNA entry (helper condiviso da
@@ -401,6 +503,8 @@ revoke all on function public.rates_recompute_affected() from public, anon, auth
 revoke all on function public.handle_new_user() from public, anon, authenticated;
 revoke all on function public.profiles_ultimo_admin() from public, anon, authenticated;
 revoke all on function public.profiles_guardia() from public, anon, authenticated;
+revoke all on function public.entries_ore_da_orario() from public, anon, authenticated;
+revoke all on function public.audit_registra() from public, anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.is_active() to authenticated;
 grant execute on function public.next_project_num() to authenticated;
@@ -420,6 +524,9 @@ alter table public.rates           enable row level security;
 alter table public.entries         enable row level security;
 alter table public.entry_costs     enable row level security;
 alter table public.app_settings    enable row level security;
+alter table public.timers          enable row level security;
+alter table public.project_templates enable row level security;
+alter table public.audit_log       enable row level security;
 
 -- Il vecchio blob della 1.x (se c'è ancora): resta come archivio, ma la
 -- chiave pubblica non deve più leggerlo né scriverlo (conteneva anche gli
@@ -439,7 +546,8 @@ end $$;
 -- Difesa in profondità: revoca i grant di default al ruolo anon
 revoke all on public.profiles, public.clients, public.projects,
   public.project_finance, public.activities, public.rates,
-  public.entries, public.entry_costs, public.app_settings from anon;
+  public.entries, public.entry_costs, public.app_settings,
+  public.timers, public.project_templates, public.audit_log from anon;
 
 -- PROFILES: gli utenti attivi leggono tutti i profili (nomi/colori servono
 -- alla UI), un sospeso solo il proprio (l'app gli dice «Account sospeso»);
@@ -511,6 +619,24 @@ create policy entries_delete on public.entries
   for delete to authenticated
   using ((user_id = auth.uid() and public.is_active()) or public.is_admin());
 
+-- TIMERS: ognuno solo il proprio, se attivo (nemmeno l'admin vede quelli altrui)
+drop policy if exists timers_own on public.timers;
+create policy timers_own on public.timers
+  for all to authenticated
+  using (user_id = auth.uid() and public.is_active())
+  with check (user_id = auth.uid() and public.is_active());
+
+-- PROJECT_TEMPLATES: solo admin
+drop policy if exists templates_admin on public.project_templates;
+create policy templates_admin on public.project_templates
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- AUDIT_LOG: lettura solo admin; scrittura solo dal trigger (security definer),
+-- nessuna policy di insert/update/delete = nessuno lo altera dall'API
+drop policy if exists audit_admin_select on public.audit_log;
+create policy audit_admin_select on public.audit_log
+  for select to authenticated using (public.is_admin());
+
 -- ═══════════════════════════════════════════════════════════
 -- 4. REALTIME (rispetta RLS per gli utenti autenticati)
 --    Aggiunge solo le tabelle che mancano: rieseguire non dà errori.
@@ -522,7 +648,8 @@ begin
     return;   -- Postgres senza Supabase (test): niente Realtime
   end if;
   foreach t in array array['profiles','clients','projects','activities',
-                           'entries','rates','project_finance','entry_costs'] loop
+                           'entries','rates','project_finance','entry_costs',
+                           'timers','project_templates'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);
@@ -536,4 +663,5 @@ end $$;
 select tablename, rowsecurity from pg_tables
 where schemaname = 'public'
   and tablename in ('profiles','clients','projects','project_finance',
-                    'activities','rates','entries','entry_costs','app_settings');
+                    'activities','rates','entries','entry_costs','app_settings',
+                    'timers','project_templates','audit_log');

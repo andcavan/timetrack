@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 4.4.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,25 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.0.0] — 2026-11-01
+
+> **Prima di pubblicare questa versione riesegui `supabase/schema.sql`** nel SQL Editor di Supabase: aggiunge l'orario alle registrazioni e le tabelle di timer, modelli e registro, senza toccare i dati. Finché non lo fai l'app funziona, ma timer, modelli e registro non sono disponibili e salvare un orario risponde «Database da aggiornare». In fondo allo script la verifica elenca ora 12 tabelle.
+
+**Aggiunto**
+- **Timer avvia/ferma** nell'Inserimento Rapido: scegli commessa e attività e premi «Avvia timer». Il timer sta sul database, quindi resta acceso chiudendo la pagina e si vede da ogni dispositivo; mentre corre c'è un riquadro con il tempo che scorre e un contatore in alto accanto all'ora. «Ferma e registra» crea la registrazione con orario di inizio e fine; «Annulla» lo butta via.
+- **Orario «dalle/alle»** facoltativo, nell'Inserimento Rapido e nella Modifica Registrazione: le ore si calcolano da sole (il calcolo lo rifà il database, che è quello che conta). L'orario compare sulla scheda della registrazione, nelle Registrazioni filtrate del Report e come colonna «Orario» nell'export Excel/PDF. Scrivere le ore a mano toglie l'orario. I due campi stanno affiancati e si leggono per intero, anche da telefono.
+- **Duplica** su ogni registrazione: la copia sul giorno selezionato della settimana.
+- **Copia settimana prec.**: copia nella settimana mostrata le proprie registrazioni della settimana precedente; quelle su commesse non più attive restano fuori, e prima di copiare l'app dice quante sono.
+- **Andamento nel tempo** nel Report: grafico delle ore per giorno, settimana o mese (secondo la lunghezza del periodo filtrato), con la media; passando sopra una barra si leggono le ore esatte.
+- **Modelli di commessa** (Gestione → Modelli, solo admin): elenchi di attività, scritti a mano o copiati da una commessa. Creando una commessa si sceglie un modello e la commessa nasce con quelle attività.
+- **Registro delle modifiche** (Gestione → Registro, solo admin): chi ha creato, modificato o eliminato ore, commesse, attività, clienti, tariffe, budget e modelli, e quando, con il valore prima e dopo. Lo scrive il database, quindi registra anche le modifiche fatte fuori dall'app, e nessuno lo può alterare dall'app.
+
+**Corretto**
+- L'icona di download («Esporta Report») non compariva: mancava nel set di icone.
+
+**Sicurezza**
+- Timer: ognuno vede e scrive solo il proprio, nemmeno l'admin vede quelli degli altri. Modelli e registro sono leggibili solo dagli admin (il registro contiene anche tariffe e budget).
 
 ### [4.4.0] — 2026-10-31
 
@@ -169,7 +188,7 @@ Versione storica su blob JSON singolo (`timetrack_data`) con login lato client. 
 
 Da fare una volta, nell'ordine, quando si pubblica la 4.0.0:
 
-1. **Schema**: Dashboard → SQL Editor → New query → incolla tutto `supabase/schema.sql` → Run. Il risultato atteso è lo stesso del punto 0.3 (9 righe con `rowsecurity = true`). Si può rieseguire: non tocca i dati.
+1. **Schema**: Dashboard → SQL Editor → New query → incolla tutto `supabase/schema.sql` → Run. Il risultato atteso è lo stesso del punto 0.3 (dalla 5.0.0, 12 righe con `rowsecurity = true`). Si può rieseguire: non tocca i dati.
 2. **Edge Function**: Dashboard → Edge Functions → `invite-user` → Code → incolla tutto `supabase/functions/invite-user/index.ts` → Deploy (verifica JWT sempre disattivata, vedi 2.2.1).
 3. **Pubblica** `app.js`, `index.html` e `style.css` sull'hosting.
 4. **Collega i dispositivi** (una volta per ognuno): apri l'app, scegli "Collega progetto" e inserisci l'indirizzo del progetto e la chiave pubblica (Dashboard → Project Settings → API Keys). Poi accedi da admin, vai in Gestione → Utenti → 🔗 **Link di collegamento**, copia il link e giralo ai colleghi: aprendolo hanno l'app già collegata. Il link ha questa forma: `https://tuodominio.it/timetrack/?supabase=https://xxxx.supabase.co&chiave=sb_publishable_…`
@@ -219,7 +238,7 @@ Comunica a tutti, con qualche giorno di anticipo:
 2. Menu a sinistra → **SQL Editor** → **New query**.
 3. Apri il file `supabase/schema.sql` in VS Code, seleziona tutto (`Ctrl+A`), copia (`Ctrl+C`).
 4. Incolla nel SQL Editor (`Ctrl+V`) e premi **Run** (o `Ctrl+Invio`).
-5. **Risultato atteso:** in fondo compare una tabella con 9 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`) tutte con `rowsecurity = true`.
+5. **Risultato atteso:** in fondo compare una tabella con 12 righe (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`, `timers`, `project_templates`, `audit_log`) tutte con `rowsecurity = true`.
 
 > Le nuove tabelle convivono con la vecchia `timetrack_data`: la vecchia app continua a funzionare come prima.
 > Lo script si può rilanciare: crea solo ciò che manca e non tocca i dati.

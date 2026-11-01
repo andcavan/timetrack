@@ -61,7 +61,7 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
 
   test('tutte le tabelle hanno la RLS attiva', () => {
     const rows = sql(`select tablename || '=' || rowsecurity from pg_tables where schemaname = 'public' order by 1;`).split('\n');
-    assert.equal(rows.length, 9);
+    assert.equal(rows.length, 12);
     rows.forEach(r => assert.match(r, /=(t|true)$/, r));
   });
 
@@ -132,6 +132,68 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     rejects(() => op(`insert into public.activities(id, project_id, name, note) values ('a3', 'p1', 'X', 'y');`), /row-level security/);
   });
 
+  test('orario dalle/alle: le ore le calcola il server, un orario a metà o rovesciato no', () => {
+    const op = as(OP);
+    op(`insert into public.entries(id, user_id, client_id, project_id, date, hours, start_time, end_time)
+        values ('e3', '${OP}', 'c1', 'p1', '2026-03-03', 1, '08:30', '12:50');`);
+    assert.equal(sql(`select hours from public.entries where id = 'e3';`), '4.33');
+    op(`update public.entries set end_time = '09:00' where id = 'e3';`);
+    assert.equal(sql(`select hours from public.entries where id = 'e3';`), '0.50');
+    // Senza orario le ore restano quelle scritte
+    op(`update public.entries set start_time = null, end_time = null, hours = 3 where id = 'e3';`);
+    assert.equal(sql(`select hours from public.entries where id = 'e3';`), '3');
+    rejects(() => op(`update public.entries set start_time = '08:00' where id = 'e3';`), /entries_orario_check/);
+    rejects(() => op(`update public.entries set start_time = '12:00', end_time = '08:00' where id = 'e3';`), /check constraint/);
+    op(`delete from public.entries where id = 'e3';`);
+  });
+
+  test('timer: ognuno vede e scrive solo il proprio, uno per utente', () => {
+    const op = as(OP);
+    op(`insert into public.timers(user_id, project_id, activity_id, note) values ('${OP}', 'p1', 'a1', 'via');`);
+    rejects(() => op(`insert into public.timers(user_id, project_id) values ('${OP}', 'p1');`), /duplicate key/);
+    rejects(() => op(`insert into public.timers(user_id, project_id) values ('${A1}', 'p1');`), /row-level security/);
+    assert.equal(op(`select count(*) from public.timers;`), '1');
+    // Nemmeno l'admin vede il timer di un altro
+    assert.equal(as(A1)(`select count(*) from public.timers;`), '0');
+    op(`delete from public.timers where user_id = '${OP}';`);
+    assert.equal(sql(`select count(*) from public.timers;`), '0');
+  });
+
+  test('modelli di commessa: solo admin', () => {
+    as(A1)(`insert into public.project_templates(id, name, activities)
+            values ('t1', 'Impianto', '[{"name":"Progetto","note":""},{"name":"Montaggio","note":"In cantiere"}]');`);
+    assert.equal(as(OP)(`select count(*) from public.project_templates;`), '0');
+    rejects(() => as(OP)(`insert into public.project_templates(name) values ('X');`), /row-level security/);
+    rejects(() => as(A1)(`insert into public.project_templates(name) values ('  ');`), /check constraint/);
+    rejects(() => as(A1)(`insert into public.project_templates(name, activities) values ('X', '{}');`), /check constraint/);
+  });
+
+  test('registro delle modifiche: scritto dal trigger con autore e campi cambiati, letto solo dall\'admin', () => {
+    const op = as(OP);
+    op(`update public.entries set hours = 1.5, note = 'corretta' where id = 'e2';`);
+    assert.equal(sql(`select actor || '|' || action || '|' || old_data::text || '|' || new_data::text from public.audit_log
+                      where table_name = 'entries' and row_id = 'e2' order by id desc limit 1;`),
+      `${OP}|update|{"note": "", "hours": 1}|{"note": "corretta", "hours": 1.5}`);
+    // Un update che non cambia nulla non lascia traccia
+    const n = sql(`select count(*) from public.audit_log;`);
+    op(`update public.entries set hours = 1.5 where id = 'e2';`);
+    assert.equal(sql(`select count(*) from public.audit_log;`), n);
+    // Creazioni ed eliminazioni, anche dell'admin, con la riga intera
+    assert.equal(sql(`select action || ':' || (new_data->>'name') from public.audit_log where table_name = 'projects' and row_id = 'p1' order by id limit 1;`), 'insert:Commessa');
+    assert.equal(sql(`select actor from public.audit_log where table_name = 'project_finance' and row_id = 'p1' limit 1;`), A1);
+    op(`insert into public.entries(id, user_id, client_id, project_id, date, hours) values ('e9', '${OP}', 'c1', 'p1', '2026-03-09', 1);
+        delete from public.entries where id = 'e9';`);
+    assert.equal(sql(`select string_agg(action, ',' order by id) from public.audit_log where row_id = 'e9';`), 'insert,delete');
+    assert.equal(sql(`select old_data->>'hours' from public.audit_log where row_id = 'e9' and action = 'delete';`), '1');
+    // L'operator non lo legge e nessuno lo scrive o lo cancella dall'API
+    assert.equal(op(`select count(*) from public.audit_log;`), '0');
+    assert.ok(Number(as(A1)(`select count(*) from public.audit_log;`)) > 0);
+    rejects(() => op(`insert into public.audit_log(table_name, row_id, action) values ('entries', 'x', 'insert');`), /row-level security/);
+    const m = sql(`select count(*) from public.audit_log where actor is not null;`);
+    as(A1)(`delete from public.audit_log; update public.audit_log set actor = null;`);
+    assert.equal(sql(`select count(*) from public.audit_log where actor is not null;`), m);
+  });
+
   test('modificare una tariffa ricalcola le ore già registrate', () => {
     as(A1)(`update public.rates set cost_rate = 40 where id = 'r1';`);
     assert.equal(sql(`select string_agg(cost_rate::text, ',' order by entry_id) from public.entry_costs;`), '40,40');
@@ -189,11 +251,21 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     assert.equal(sql(`select count(*) from public.activities where note = '';`), '2');
   });
 
+  test('un database di prima della 5.0.0 riceve l\'orario delle registrazioni', () => {
+    sql(`alter table public.entries drop column start_time, drop column end_time;`);
+    sql(SCHEMA);
+    assert.equal(sql(`select string_agg(column_name || ':' || data_type, ',' order by column_name) from information_schema.columns
+      where table_schema = 'public' and table_name = 'entries' and column_name in ('start_time','end_time');`),
+      'end_time:time without time zone,start_time:time without time zone');
+    assert.equal(sql(`select count(*) from pg_constraint where conname = 'entries_orario_check';`), '1');
+  });
+
   test('lo schema si riesegue senza errori e senza perdere dati', () => {
     sql(SCHEMA);
     assert.equal(sql(`select count(*) from public.entries;`), '2');
     assert.equal(profile(A1), 'admin|true');
-    assert.equal(sql(`select count(*) from pg_publication_tables where pubname = 'supabase_realtime';`), '8');
+    assert.equal(sql(`select count(*) from pg_publication_tables where pubname = 'supabase_realtime';`), '10');
+    assert.equal(sql(`select count(*) from pg_trigger where tgname like '%_audit' and not tgisinternal;`), '7');
     assert.equal(sql(`select count(*) from pg_trigger where tgrelid = 'public.profiles'::regclass and not tgisinternal;`), '2');
   });
 });

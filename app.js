@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='4.4.0';
+const APP_VERSION='5.0.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 //  gli operator ricevono solo le proprie entries e MAI tariffe,
 //  costi o budget (le query su quelle tabelle tornano vuote).
 // ═══════════════════════════════════════
+let dbOutdatedWarned=false;
 let db=null,currentUser=null,currentEmail=null,currentView='timesheet',selectedWeek,selectedDay,activeMgmt=null,mgmtProjectFilter={clientId:'',search:''};
 
 // Flusso invito/recovery: il tipo va letto dall'URL PRIMA che il client
@@ -106,6 +107,15 @@ async function loadAll(){
   ]);
   const bad=[profiles,clients,projects,activities,entries,rates,finance,costs].find(r=>r.error);
   if(bad){updateSyncStatus('err');throw bad.error}
+  // Tabelle della 5.0.0: su un database non ancora aggiornato mancano, e
+  // l'app deve funzionare lo stesso (senza timer e modelli) finché l'admin
+  // non riesegue lo schema.
+  const [timers,templates]=await Promise.all([
+    supa.from('timers').select('*'),
+    supa.from('project_templates').select('*').order('name'),
+  ]);
+  const missing=[timers,templates].find(r=>r.error);
+  if(missing){console.warn('Tabelle 5.0.0 non disponibili:',missing.error);if(!dbOutdatedWarned){dbOutdatedWarned=true;setTimeout(()=>showToast('Database da aggiornare: riesegui supabase/schema.sql','error'),1200)}}
   const finMap={};(finance.data||[]).forEach(f=>{finMap[f.project_id]=Number(f.budget)});
   const actByProj={};(activities.data||[]).forEach(a=>{(actByProj[a.project_id]=actByProj[a.project_id]||[]).push({id:a.id,name:a.name,note:a.note||''})});
   const costMap={};(costs.data||[]).forEach(c=>{costMap[c.entry_id]=c});
@@ -113,9 +123,15 @@ async function loadAll(){
     users:(profiles.data||[]).map(p=>({id:p.id,name:p.name,username:p.username||'',email:p.email||'',role:p.role,color:p.color,active:p.active})),
     clients:(clients.data||[]).map(c=>({id:c.id,name:c.name,referente:c.referente||'',email:c.email||'',active:c.active})),
     projects:(projects.data||[]).map(p=>({id:p.id,clientId:p.client_id,name:p.name,code:p.code||'',referente:p.referente||'',status:p.status,budget:finMap[p.id]||0,budgetHours:p.budget_hours?Number(p.budget_hours):0,deadline:p.deadline||'',activities:actByProj[p.id]||[],assignedUsers:p.assigned_users||[],note:p.note||''})),
-    entries:(entries.data||[]).map(e=>{const c=costMap[e.id];return{id:e.id,userId:e.user_id,clientId:e.client_id,projectId:e.project_id,activityId:e.activity_id,date:e.date,hours:Number(e.hours),note:e.note||'',costRate:c?Number(c.cost_rate):0,clientRate:c?Number(c.client_rate):0,createdAt:e.created_at}}),
+    entries:(entries.data||[]).map(e=>{const c=costMap[e.id];return{id:e.id,userId:e.user_id,clientId:e.client_id,projectId:e.project_id,activityId:e.activity_id,date:e.date,hours:Number(e.hours),note:e.note||'',startTime:hhmm(e.start_time),endTime:hhmm(e.end_time),costRate:c?Number(c.cost_rate):0,clientRate:c?Number(c.client_rate):0,createdAt:e.created_at}}),
     rates:(rates.data||[]).map(r=>({id:r.id,userId:r.user_id,clientId:r.client_id,projectId:r.project_id,costRate:r.cost_rate!=null?Number(r.cost_rate):null,clientRate:r.client_rate!=null?Number(r.client_rate):null,from:r.valid_from,to:r.valid_to})),
+    templates:(templates.data||[]).map(t=>({id:t.id,name:t.name,activities:Array.isArray(t.activities)?t.activities.filter(a=>a&&a.name).map(a=>({name:String(a.name),note:String(a.note||'')})):[]})),
+    timer:null,
   };
+  // Il timer in corso dell'utente (la RLS restituisce solo il proprio)
+  const t=(timers.data||[])[0];
+  if(t)db.timer={projectId:t.project_id,activityId:t.activity_id,note:t.note||'',startedAt:t.started_at};
+  db.timersAvailable=!timers.error;db.templatesAvailable=!templates.error;
   updateSyncStatus('ok');
 }
 
@@ -151,6 +167,7 @@ function rerenderCurrent(){
   if(document.querySelector('.modal-backdrop'))return; // non disturbare modal aperti
   if(document.querySelector('#modal-root .modal-overlay'))return; // modali di modifica aperti
   if(!currentUser)return;
+  renderTimer();
   ({timesheet:renderWeek,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[currentView]?.();
 }
 
@@ -167,7 +184,7 @@ function scheduleRemoteRefresh(){
 function startRealtimeSubscription(){
   if(realtimeChannel)supa.removeChannel(realtimeChannel);
   realtimeChannel=supa.channel('timetrack_changes');
-  ['profiles','clients','projects','activities','entries','rates','project_finance','entry_costs'].forEach(t=>{
+  ['profiles','clients','projects','activities','entries','rates','project_finance','entry_costs','timers','project_templates'].forEach(t=>{
     realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:t},scheduleRemoteRefresh);
   });
   realtimeChannel.subscribe();
@@ -196,6 +213,13 @@ function _a(){return currentUser&&currentUser.role==='admin'}
 function safeColor(c){return /^#[0-9A-Fa-f]{6}$/.test(c||'')?c:'#888888'}
 function isProjectVisible(proj){if(_a())return true;const au=proj.assignedUsers;if(!au||au.length===0)return true;return au.includes(currentUser.id)}
 function gid(){return crypto.randomUUID()}
+// Orari: il database li dà come "08:30:00", l'app li usa come "08:30"
+function hhmm(t){return t?String(t).slice(0,5):''}
+function toMin(t){const[h,m]=String(t).split(':').map(Number);return h*60+m}
+// Ore fra due orari dello stesso giorno, al centesimo come fa il server
+// (entries_ore_da_orario); null se l'orario manca o è rovesciato
+function hoursBetween(s,e){if(!s||!e)return null;const d=toMin(e)-toMin(s);return d>0?Math.round(d/60*100)/100:null}
+function timeRange(e){return e.startTime&&e.endTime?e.startTime+'–'+e.endTime:''}
 // Testo di una nota per l'HTML: escape e righe a capo conservate
 function noteHtml(n){return esc(n).replace(/\n/g,'<br>')}
 function openModal(h){document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${h}</div></div>`}
@@ -485,7 +509,7 @@ function canSeeView(v){return _a()||!ADMIN_VIEWS.includes(v)}
 function setView(v){
   if(!canSeeView(v))v='timesheet';
   currentView=v;document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('view-'+v)?.classList.add('active');renderHeader();
+  document.getElementById('view-'+v)?.classList.add('active');renderHeader();renderTimer();
   ({timesheet:renderTimesheet,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[v]?.();
 }
 
@@ -496,7 +520,31 @@ function renderTimesheet(){
   document.getElementById('qe-project').value='';
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
   selectedDay=document.getElementById('qe-date').value;
-  renderQH();renderWeek();
+  renderQH();renderWeek();renderTimer();
+}
+// Orario «dalle/alle» (prefisso qe = inserimento rapido, me = modifica):
+// con entrambi gli orari le ore si calcolano da sole; scrivere le ore a mano
+// toglie l'orario, che altrimenti direbbe un'altra cosa.
+function syncTimes(px){
+  const s=document.getElementById(px+'-start').value,e=document.getElementById(px+'-end').value;
+  const h=hoursBetween(s,e);
+  const hi=document.getElementById(px+'-hours');
+  if(h!=null){hi.value=h;if(px==='qe')renderQH()}
+  else if(s&&e){hi.value=''}
+}
+function hoursTyped(px){
+  const s=document.getElementById(px+'-start'),e=document.getElementById(px+'-end');
+  if(s.value||e.value){s.value='';e.value=''}
+  if(px==='qe')renderQH();
+}
+// Legge orario e ore da un modulo; null = dati non validi (toast già mostrato)
+function readTimeFields(px){
+  const s=document.getElementById(px+'-start').value,e=document.getElementById(px+'-end').value;
+  if(!s&&!e)return{start:null,end:null,hours:parseFloat(document.getElementById(px+'-hours').value)};
+  if(!s||!e){showToast('Orario incompleto: indica sia «dalle» sia «alle»','error');return null}
+  const h=hoursBetween(s,e);
+  if(h==null){showToast('L\'orario di fine deve essere dopo quello di inizio','error');return null}
+  return{start:s,end:e,hours:h};
 }
 function onQeProjectChange3(){
   const pid=document.getElementById('qe-project').value;
@@ -512,7 +560,7 @@ function onQeProjectChange3(){
 }
 function renderQH(){
   const cur=parseFloat(document.getElementById('qe-hours').value);
-  document.getElementById('quick-hours').innerHTML=[1,2,4,6,8].map(h=>`<button class="qh-btn ${cur===h?'active':''}" onclick="document.getElementById('qe-hours').value=${h};renderQH()">${h}h</button>`).join('');
+  document.getElementById('quick-hours').innerHTML=[1,2,4,6,8].map(h=>`<button class="qh-btn ${cur===h?'active':''}" onclick="document.getElementById('qe-hours').value=${h};hoursTyped('qe')">${h}h</button>`).join('');
 }
 function filterProjects(){
   const q=document.getElementById('qe-project-search').value.toLowerCase();
@@ -536,21 +584,94 @@ async function addEntry(){
   const projectId=document.getElementById('qe-project').value;
   const activityId=document.getElementById('qe-activity').value;
   const date=document.getElementById('qe-date').value;
-  const hours=parseFloat(document.getElementById('qe-hours').value);
   const note=document.getElementById('qe-note').value;
+  const t=readTimeFields('qe');if(!t)return;
+  const hours=t.hours;
   if(!projectId||!activityId||!date||!hours){showToast('Compila tutti i campi','error');return}
   if(isNaN(hours)||hours<=0||hours>24){showToast('Ore non valide','error');return}
   const proj=db.projects.find(p=>p.id===projectId);
   if(!proj){showToast('Commessa non valida','error');return}
-  // Le tariffe vengono snapshotate lato server dal trigger (gli operator non le vedono mai)
-  const ok=await dbWrite(supa.from('entries').insert({id:gid(),user_id:currentUser.id,client_id:proj.clientId,project_id:projectId,activity_id:activityId,date,hours,note:note||''}),`${hours}h registrate!`);
+  // Le tariffe vengono snapshotate lato server dal trigger (gli operator non le vedono mai).
+  // L'orario si manda solo se c'è: un database di prima della 5.0.0 non ha le colonne.
+  const row={id:gid(),user_id:currentUser.id,client_id:proj.clientId,project_id:projectId,activity_id:activityId,date,hours,note:note||''};
+  if(t.start){row.start_time=t.start;row.end_time=t.end}
+  const ok=await dbWrite(supa.from('entries').insert(row),`${hours}h registrate!`);
   if(!ok)return;
+  resetQuickEntry();
+  renderWeek();
+}
+function resetQuickEntry(){
   document.getElementById('qe-project-search').value='';
   document.getElementById('qe-project').value='';
   onQeProjectChange3();
-  document.getElementById('qe-hours').value='';
-  document.getElementById('qe-note').value='';
-  renderQH();renderWeek();
+  ['qe-hours','qe-note','qe-start','qe-end'].forEach(id=>{document.getElementById(id).value=''});
+  renderQH();
+}
+
+// ═══ TIMER ═══
+// Uno per utente, salvato nella tabella `timers`: sopravvive a un ricarica
+// della pagina e si vede (e si ferma) da ogni dispositivo. Inizio e fine
+// li dà l'orologio del dispositivo, come per le ore scritte a mano.
+function timerElapsedMs(){return db?.timer?Math.max(0,Date.now()-new Date(db.timer.startedAt).getTime()):0}
+function fmtElapsed(ms){const t=Math.floor(ms/1000),h=Math.floor(t/3600),m=Math.floor(t%3600/60),sec=t%60;return`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
+function renderTimer(){
+  const bar=document.getElementById('timer-bar'),chip=document.getElementById('timer-chip'),btn=document.getElementById('timer-start-btn');
+  if(!bar||!db)return;
+  const t=db.timer;
+  if(btn)btn.style.display=db.timersAvailable&&!t?'':'none';
+  if(!t){bar.style.display='none';bar.innerHTML='';if(chip)chip.style.display='none';return}
+  const pr=db.projects.find(p=>p.id===t.projectId),ac=pr?.activities?.find(a=>a.id===t.activityId);
+  const el=fmtElapsed(timerElapsedMs());
+  bar.style.display='flex';
+  bar.innerHTML=`<span class="timer-dot"></span><div class="timer-info"><div class="timer-what">${esc(pr?(pr.code?pr.code+' - ':'')+pr.name:'Commessa eliminata')}${ac?` · ${esc(ac.name)}`:''}</div><div class="timer-sub">Dalle ${new Date(t.startedAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${t.note?` · ${esc(t.note)}`:''}</div></div><span class="timer-elapsed" id="timer-elapsed">${el}</span><button class="add-btn-sm timer-stop" onclick="stopTimer()">${ico('stop')} Ferma e registra</button><button class="btn-outline" onclick="cancelTimer()">Annulla</button>`;
+  if(chip){chip.style.display='';chip.innerHTML=`<span class="timer-dot"></span><span id="timer-chip-time">${el}</span>`}
+}
+// Ogni secondo aggiorna solo i numeri, senza ridisegnare
+function tickTimer(){
+  if(!db?.timer)return;
+  const el=fmtElapsed(timerElapsedMs());
+  const a=document.getElementById('timer-elapsed'),b=document.getElementById('timer-chip-time');
+  if(a)a.textContent=el;if(b)b.textContent=el;
+}
+async function startTimer(){
+  if(db.timer){showToast('C\'è già un timer in corso','error');return}
+  const projectId=document.getElementById('qe-project').value;
+  const activityId=document.getElementById('qe-activity').value;
+  if(!projectId||!activityId){showToast('Scegli commessa e attività','error');return}
+  const note=document.getElementById('qe-note').value||'';
+  const ok=await dbWrite(supa.from('timers').insert({user_id:currentUser.id,project_id:projectId,activity_id:activityId,note,started_at:new Date().toISOString()}),'Timer avviato');
+  if(!ok)return;
+  resetQuickEntry();
+  renderTimer();
+}
+async function stopTimer(){
+  const t=db.timer;if(!t)return;
+  const pr=db.projects.find(p=>p.id===t.projectId);
+  if(!pr){showToast('La commessa del timer non esiste più: annullalo','error');return}
+  const start=new Date(t.startedAt),end=new Date();
+  const date=localYMD(start);
+  const row={id:gid(),user_id:currentUser.id,client_id:pr.clientId,project_id:pr.id,activity_id:t.activityId||null,date,note:t.note||''};
+  let warn='';
+  if(localYMD(end)===date){
+    const s=start.toTimeString().slice(0,5),e=end.toTimeString().slice(0,5);
+    const h=hoursBetween(s,e);
+    if(h==null){showToast('Meno di un minuto: lascia correre il timer o annullalo','error');return}
+    Object.assign(row,{start_time:s,end_time:e,hours:h});
+  }else{
+    // A cavallo della mezzanotte: niente orario, ore sul giorno di inizio (al massimo 24)
+    row.hours=Math.min(24,Math.max(0.25,Math.round((end-start)/3600000*4)/4));
+    warn=' (timer a cavallo della mezzanotte: controlla le ore)';
+  }
+  updateSyncStatus('sync');
+  const {error}=await supa.from('entries').insert(row);
+  if(error){console.error(error);updateSyncStatus('err');showToast(friendlyDbError(error),'error');return}
+  const ok=await dbWrite(supa.from('timers').delete().eq('user_id',currentUser.id),`${row.hours}h registrate${warn}`);
+  if(ok){renderTimer();renderWeek()}
+}
+async function cancelTimer(){
+  if(!db.timer||!confirm('Annullare il timer senza registrare le ore?'))return;
+  const ok=await dbWrite(supa.from('timers').delete().eq('user_id',currentUser.id),'Timer annullato');
+  if(ok)renderTimer();
 }
 
 // ═══ WEEK ═══
@@ -558,6 +679,7 @@ function changeWeek(dir){const d=parseYMD(selectedWeek);d.setDate(d.getDate()+di
 function goToday(){selectedWeek=getWeekStart(todayStr());renderWeek()}
 function selectDay(date){selectedDay=date;document.getElementById('qe-date').value=date;renderWeek()}
 function renderWeek(){
+  renderTimer();
   const days=getWeekDays(selectedWeek);
   document.getElementById('week-label').textContent=fmtDate(days[0])+' — '+fmtDate(days[6]);
   const entries=db.entries.filter(e=>days.includes(e.date)&&(_a()||e.userId===currentUser.id));
@@ -565,12 +687,50 @@ function renderWeek(){
   const td=todayStr();
   document.getElementById('week-grid').innerHTML=days.map((d,i)=>{
     const de=entries.filter(e=>e.date===d),dh=de.reduce((s,e)=>s+e.hours,0);
-    return`<div class="day-col ${d===td?'today':''} ${d===selectedDay?'selected':''}" onclick="selectDay('${d}')"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
+    return`<div class="day-col ${d===td?'today':''} ${d===selectedDay?'selected':''}" onclick="if(!event.target.closest('[data-action]'))selectDay('${d}')"><div class="day-header"><span class="day-name">${DN[i]}</span><span class="day-date">${d.split('-')[2]}</span>${dh>0?`<span class="day-hours">${dh}h</span>`:''}</div><div class="day-entries">${de.map(renderCard).join('')}</div></div>`;
   }).join('');
 }
 function renderCard(e){
   const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId),can=_a()||e.userId===currentUser.id,showU=_a()&&e.userId!==currentUser.id;
-  return`<div class="entry-card" style="border-left-color:${safeColor(usr?.color)}"><div class="entry-hours">${e.hours}h</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}">${ico('trash','tinted')}</button></div>`:''}</div>`;
+  const tr=timeRange(e);
+  return`<div class="entry-card" style="border-left-color:${safeColor(usr?.color)}"><div class="entry-hours">${e.hours}h${tr?`<span class="entry-time">${tr}</span>`:''}</div><div class="entry-client">${esc(cl?.name||'?')}</div><div class="entry-project">${esc(pr?.name||'?')}</div><div class="entry-activity">${esc(ac?.name||'?')}</div>${showU?`<div class="entry-user">${esc(usr?.name?.split(' ')[0])}</div>`:''}${e.note?`<div class="entry-note">${esc(e.note)}</div>`:''}${can?`<div class="entry-actions"><button class="mini-btn" data-action="edit-entry" data-id="${e.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn" data-action="duplicate-entry" data-id="${e.id}" title="Duplica sul giorno selezionato">${ico('copy','tinted')}</button><button class="mini-btn danger" data-action="delete-entry" data-id="${e.id}" title="Elimina">${ico('trash','tinted')}</button></div>`:''}</div>`;
+}
+
+// ═══ DUPLICA / COPIA SETTIMANA ═══
+// Riga da inserire copiata da una registrazione, su un altro giorno
+function entryCopyRow(e,date){
+  const row={id:gid(),user_id:e.userId,client_id:e.clientId,project_id:e.projectId,activity_id:e.activityId||null,date,hours:e.hours,note:e.note||''};
+  if(e.startTime&&e.endTime){row.start_time=e.startTime;row.end_time=e.endTime}
+  return row;
+}
+// Si copia solo su commesse ancora attive e visibili: le altre non
+// accettano più ore dall'inserimento rapido, e non devono accettarle da qui
+function canCopyEntry(e){
+  const pr=db.projects.find(p=>p.id===e.projectId);
+  return !!pr&&pr.status==='active'&&isProjectVisible(pr)&&(!e.activityId||pr.activities.some(a=>a.id===e.activityId));
+}
+async function duplicateEntry(id){
+  const e=db.entries.find(x=>x.id===id);if(!e)return;
+  if(!canCopyEntry(e)){showToast('La commessa non è più attiva','error');return}
+  const date=selectedDay||todayStr();
+  const ok=await dbWrite(supa.from('entries').insert(entryCopyRow(e,date)),`Duplicata su ${fmtDate(date)}`);
+  if(ok)renderWeek();
+}
+async function copyPrevWeek(){
+  const days=getWeekDays(selectedWeek);
+  const prev=new Set(days.map(d=>{const x=parseYMD(d);x.setDate(x.getDate()-7);return localYMD(x)}));
+  const src=db.entries.filter(e=>e.userId===currentUser.id&&prev.has(e.date));
+  if(!src.length){showToast('Nessuna tua registrazione nella settimana precedente','error');return}
+  const ok=src.filter(canCopyEntry),skipped=src.length-ok.length;
+  if(!ok.length){showToast('Le commesse della settimana precedente non sono più attive','error');return}
+  const already=db.entries.filter(e=>e.userId===currentUser.id&&days.includes(e.date)).length;
+  const msg=`Copiare ${ok.length} registrazion${ok.length===1?'e':'i'} della settimana precedente in questa?`
+    +(skipped?`\n${skipped} su commesse non più attive restano fuori.`:'')
+    +(already?`\nQuesta settimana ha già ${already} tue registrazioni: le copie si aggiungono.`:'');
+  if(!confirm(msg))return;
+  const rows=ok.map(e=>{const x=parseYMD(e.date);x.setDate(x.getDate()+7);return entryCopyRow(e,localYMD(x))});
+  const done=await dbWrite(supa.from('entries').insert(rows),`${rows.length} registrazion${rows.length===1?'e copiata':'i copiate'}`);
+  if(done)renderWeek();
 }
 
 // Add global event delegation for all buttons with data-action
@@ -586,6 +746,9 @@ document.addEventListener('click', function(event) {
   switch(action) {
     case 'delete-entry': delEntry(id); break;
     case 'edit-entry': editEntryModal(id); break;
+    case 'duplicate-entry': duplicateEntry(id); break;
+    case 'delete-template': delTemplate(id); break;
+    case 'edit-template': editTemplateModal(id); break;
     case 'delete-client': delClient(id); break;
     case 'edit-client': editClientModal(id); break;
     case 'delete-project': delProject(id); break;
@@ -616,7 +779,8 @@ function editEntryModal(id){
     <div class="modal-field"><label>Attività</label><select id="me-activity">
       ${acts.map(a=>`<option value="${a.id}" ${a.id===e.activityId?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Data</label><input type="date" id="me-date" value="${e.date}"></div>
-    <div class="modal-field"><label>Ore</label><input type="number" id="me-hours" value="${e.hours}" min="0.25" max="24" step="0.25"></div>
+    <div class="modal-field"><label>Orario <span class="label-opt">facoltativo</span></label><div class="time-pair"><input type="time" id="me-start" value="${e.startTime}" aria-label="Dalle" oninput="syncTimes('me')"><span>–</span><input type="time" id="me-end" value="${e.endTime}" aria-label="Alle" oninput="syncTimes('me')"></div></div>
+    <div class="modal-field"><label>Ore</label><input type="number" id="me-hours" value="${e.hours}" min="0.25" max="24" step="0.25" oninput="hoursTyped('me')"></div>
     <div class="modal-field"><label>Nota</label><input type="text" id="me-note" value="${esc(e.note||'')}"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveEntryEdit('${id}')">Salva</button></div>`);
 }
@@ -636,7 +800,8 @@ function onEditProjectChange(){
 }
 async function saveEntryEdit(id){
   const e=db.entries.find(x=>x.id===id);if(!e)return;
-  const h=parseFloat(document.getElementById('me-hours').value);
+  const t=readTimeFields('me');if(!t)return;
+  const h=t.hours;
   if(isNaN(h)||h<=0||h>24){showToast('Ore non valide','error');return}
   const upd={
     client_id:document.getElementById('me-client').value,
@@ -646,6 +811,8 @@ async function saveEntryEdit(id){
     hours:h,
     note:document.getElementById('me-note').value
   };
+  // Le colonne dell'orario si toccano solo se servono (database di prima della 5.0.0)
+  if(t.start||e.startTime){upd.start_time=t.start;upd.end_time=t.end}
   closeModal();
   const ok=await dbWrite(supa.from('entries').update(upd).eq('id',id),'Aggiornata');
   if(ok)renderWeek();
@@ -700,10 +867,8 @@ function resetFilters(){
   renderDashboard();
 }
 
-function getFilteredEntries(){
-  let ents=db.entries.filter(e=>_a()||e.userId===currentUser.id);
-  
-  // Filtro periodo
+// Date del periodo scelto nei filtri; undefined = senza limite ("Tutto")
+function reportRange(){
   let fromDate,toDate;
   if(reportFilters.period==='current-month'){
     const now=new Date();
@@ -725,7 +890,12 @@ function getFilteredEntries(){
     fromDate=reportFilters.dateFrom;
     toDate=reportFilters.dateTo;
   }
-  
+  return{fromDate,toDate};
+}
+
+function getFilteredEntries(){
+  let ents=db.entries.filter(e=>_a()||e.userId===currentUser.id);
+  const {fromDate,toDate}=reportRange();
   if(fromDate)ents=ents.filter(e=>e.date>=fromDate);
   if(toDate)ents=ents.filter(e=>e.date<=toDate);
   
@@ -791,11 +961,64 @@ function renderDashboard(){
   if(!ce.length)bd.innerHTML='<p class="empty-text">Nessuna registrazione con i filtri selezionati</p>';
   else{const mx=Math.max(...ce.map(([,d])=>d.h),1);bd.innerHTML=ce.map(([n,d])=>`<div class="breakdown-row"><div class="breakdown-name">${esc(n)}</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:${d.h/mx*100}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div></div><div class="breakdown-stats"><span>${d.h.toFixed(1)}h</span>${_a()?`<span style="color:var(--text-dim)">€${d.r.toFixed(0)}</span><span style="color:${d.r-d.c>=0?'var(--green)':'var(--red)'};font-weight:600">+€${(d.r-d.c).toFixed(0)}</span>`:''}</div></div>`).join('')}
 
+  renderTrend(ents);
+
   // PROJECT BREAKDOWN WITH DONUTS
   renderProjectBreakdown(ents);
 
   const all=ents.slice(-100).reverse();
-  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}</td>${_a()?`<td><span class="user-tag" style="background:${safeColor(usr?.color)}22;color:${safeColor(usr?.color)}">${esc(usr?.name?.split(' ')[0])}</span></td>`:''}<td>${esc(cl?.name||'?')}</td><td>${esc(pr?.name||'?')}</td><td>${esc(ac?.name||'?')}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
+  document.getElementById('recent-table').innerHTML=`<table><thead><tr><th>Data</th>${_a()?'<th>Utente</th>':''}<th>Cliente</th><th>Commessa</th><th>Attività</th><th>Ore</th>${_a()?'<th>Costo</th><th>Ricavo</th>':''}</tr></thead><tbody>${all.map(e=>{const cl=db.clients.find(c=>c.id===e.clientId),pr=db.projects.find(p=>p.id===e.projectId),ac=pr?.activities?.find(a=>a.id===e.activityId),usr=db.users.find(u=>u.id===e.userId);return`<tr><td>${fmtDate(e.date)}${e.startTime?`<div class="cell-sub">${timeRange(e)}</div>`:''}</td>${_a()?`<td><span class="user-tag" style="background:${safeColor(usr?.color)}22;color:${safeColor(usr?.color)}">${esc(usr?.name?.split(' ')[0])}</span></td>`:''}<td>${esc(cl?.name||'?')}</td><td>${esc(pr?.name||'?')}</td><td>${esc(ac?.name||'?')}</td><td style="font-weight:700">${e.hours}h</td>${_a()?`<td>€${(e.hours*e.costRate).toFixed(0)}</td><td>€${(e.hours*e.clientRate).toFixed(0)}</td>`:''}</tr>`}).join('')}</tbody></table>`;
+}
+
+// ═══ ANDAMENTO NEL TEMPO ═══
+// Ore per giorno, settimana o mese secondo la lunghezza del periodo: una
+// barra per intervallo, anche vuoto, così i buchi si vedono.
+const MONTHS_IT=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+function trendBuckets(ents){
+  let {fromDate,toDate}=reportRange();
+  if(!ents.length&&(!fromDate||!toDate))return null;
+  const dates=ents.map(e=>e.date);
+  fromDate=fromDate||dates.reduce((a,b)=>a<b?a:b);
+  toDate=toDate||dates.reduce((a,b)=>a>b?a:b);
+  if(fromDate>toDate)return null;
+  const span=Math.round((parseYMD(toDate)-parseYMD(fromDate))/86400000)+1;
+  const unit=span<=45?'day':span<=200?'week':'month';
+  const keyOf=d=>unit==='day'?d:unit==='week'?getWeekStart(d):d.slice(0,7);
+  const buckets=[],idx={};
+  const cur=parseYMD(unit==='week'?getWeekStart(fromDate):unit==='month'?fromDate.slice(0,7)+'-01':fromDate);
+  while(localYMD(cur)<=toDate&&buckets.length<400){
+    const k=keyOf(localYMD(cur));
+    idx[k]=buckets.length;buckets.push({key:k,hours:0});
+    if(unit==='day')cur.setDate(cur.getDate()+1);else if(unit==='week')cur.setDate(cur.getDate()+7);else cur.setMonth(cur.getMonth()+1);
+  }
+  ents.forEach(e=>{const i=idx[keyOf(e.date)];if(i!=null)buckets[i].hours+=e.hours});
+  return{unit,buckets};
+}
+function trendLabel(unit,k,long){
+  if(unit==='month'){const[y,m]=k.split('-');return MONTHS_IT[+m-1]+' '+(long?y:y.slice(2))}
+  const d=parseYMD(k);
+  if(unit==='week')return long?'Settimana dal '+fmtDate(k):String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+  return long?DN[(d.getDay()+6)%7]+' '+fmtDate(k):String(d.getDate());
+}
+function renderTrend(ents){
+  const el=document.getElementById('trend-chart');if(!el)return;
+  const t=trendBuckets(ents);
+  if(!t||!ents.length){el.innerHTML='<p class="empty-text">Nessuna registrazione con i filtri selezionati</p>';return}
+  const {unit,buckets}=t;
+  const max=Math.max(...buckets.map(b=>b.hours),0);
+  // Scala con passi tondi: 2, 4, 5, 10, 20, 25, 50… ore
+  const step=[1,2,4,5,10,20,25,50,100,200,250,500,1000].find(x=>x*4>=max)||Math.ceil(max/4);
+  const top=Math.max(step*Math.ceil(max/step),step);
+  const every=Math.ceil(buckets.length/12);
+  const ticks=[];for(let v=0;v<=top;v+=step)ticks.push(v);
+  const used=buckets.filter(b=>b.hours>0);
+  const avg=used.length?used.reduce((a,b)=>a+b.hours,0)/used.length:0;
+  const unitL={day:'giorno',week:'settimana',month:'mese'}[unit];
+  el.innerHTML=`<div class="trend-meta">Ore per ${unitL} · media ${avg.toFixed(1)}h per ${unitL} con ore registrate</div>
+  <div class="trend"><div class="trend-axis">${ticks.slice().reverse().map(v=>`<span>${v}h</span>`).join('')}</div>
+  <div class="trend-plot"><div class="trend-area">${ticks.map(v=>`<div class="trend-grid" style="bottom:${v/top*100}%"></div>`).join('')}
+  <div class="trend-bars">${buckets.map(b=>`<div class="trend-col" title="${esc(trendLabel(unit,b.key,true))}: ${b.hours.toFixed(2)}h"><div class="trend-bar" style="height:${b.hours/top*100}%"></div></div>`).join('')}</div></div>
+  <div class="trend-xs">${buckets.map((b,i)=>`<span>${i%every===0?esc(trendLabel(unit,b.key,false)):''}</span>`).join('')}</div></div></div>`;
 }
 
 function renderProjectBreakdown(entries){
@@ -901,7 +1124,7 @@ function renderGuideTab(){
           <tr><td>Costi, ricavi, budget €</td><td>Mai visibili (il server non li invia proprio)</td><td>Visibili ovunque</td></tr>
           <tr><td>Anagrafiche (clienti, commesse, attività)</td><td>Sola lettura</td><td>Creazione, modifica, eliminazione</td></tr>
           <tr><td>Report Commesse</td><td>Non accessibile</td><td>Tab Commesse</td></tr>
-          <tr><td>Utenti, tariffe, backup, guida</td><td>Non accessibili</td><td>Tab Gestione</td></tr>
+          <tr><td>Utenti, tariffe, modelli, registro, backup, guida</td><td>Non accessibili</td><td>Tab Gestione</td></tr>
         </table>
         <ul>
           <li>Il ruolo si cambia da <b>Gestione → Utenti → ${ico('edit','tinted')}</b>. Un trigger server impedisce l'auto-promozione: solo un admin può cambiare i ruoli.</li>
@@ -920,11 +1143,19 @@ function renderGuideTab(){
           <li><b>Data</b> (proposta oggi), <b>ore</b> a passi di 0,25 (15 minuti) — oppure usa i bottoni rapidi 1h/2h/4h/6h/8h — e una <b>nota</b> facoltativa.</li>
           <li>Premi <b>${ico('check','tinted')} Registra Ore</b>.</li>
         </ol>
+        <p><b>Orario</b> (facoltativo): con «dalle» e «alle» le ore si calcolano da sole e l'orario compare sulla registrazione. Scrivere le ore a mano toglie l'orario. Un orario non può passare la mezzanotte.</p>
+        <h4>Timer</h4>
+        <ul>
+          <li>Scegli commessa e attività (e una nota, se vuoi) e premi <b>${ico('play','tinted')} Avvia timer</b>. Il timer resta acceso anche chiudendo la pagina e si vede da ogni dispositivo; in alto, accanto all'ora, c'è il tempo che scorre.</li>
+          <li><b>${ico('stop','tinted')} Ferma e registra</b> crea la registrazione con orario di inizio e fine; <b>Annulla</b> lo butta via. Un timer a cavallo della mezzanotte registra le ore sul giorno di inizio, senza orario.</li>
+        </ul>
         <h4>Griglia settimanale</h4>
         <ul>
           <li>Frecce ◀ ▶ per cambiare settimana, <b>OGGI</b> per tornare a quella corrente; in alto a destra il totale ore della settimana.</li>
           <li>Clic su una registrazione per <b>modificarla</b>; dentro la modifica trovi anche l'eliminazione.</li>
           <li>Un operatore vede e modifica solo le proprie registrazioni; un admin vede quelle di tutti.</li>
+          <li><b>${ico('copy','tinted')} Duplica</b> su una registrazione la copia sul giorno selezionato (clic sul giorno per sceglierlo, evidenziato in verde).</li>
+          <li><b>Copia settimana prec.</b> copia nella settimana mostrata le <b>tue</b> registrazioni della settimana precedente, stesso giorno della settimana. Quelle su commesse non più attive restano fuori.</li>
         </ul>
         <div class="g-tip">Il costo/ricavo di ogni registrazione è calcolato server-side dalla tariffa in vigore per quella data/utente/cliente/commessa e resta sincronizzato: se un admin aggiunge, modifica o elimina una tariffa, gli importi delle registrazioni già esistenti nel suo periodo di validità vengono ricalcolati automaticamente.</div>
       </div>
@@ -938,7 +1169,7 @@ function renderGuideTab(){
           <li><b>Periodo</b>: mese corrente/scorso, anno corrente/scorso, tutto, oppure date personalizzate.</li>
           <li><b>Cliente, commessa, utente</b>: combinabili tra loro. Premi <b>${ico('search','tinted')} Applica filtri</b>; <b>${ico('refresh','tinted')} Reset</b> riparte da zero.</li>
         </ul>
-        <p>Sotto i filtri trovi i KPI del periodo, il dettaglio per cliente e per commessa e l'elenco delle registrazioni filtrate. Costi e ricavi compaiono solo agli admin.</p>
+        <p>Sotto i filtri trovi i KPI del periodo, l'<b>andamento nel tempo</b> (ore per giorno, settimana o mese secondo la lunghezza del periodo), il dettaglio per cliente e per commessa e l'elenco delle registrazioni filtrate. Costi e ricavi compaiono solo agli admin.</p>
         <h4>Esporta Report (Excel o PDF)</h4>
         <ul>
           <li>Il bottone <b>${ico('download','tinted')} Esporta Report</b> apre le opzioni: titolo, colonne da includere (data, utente, cliente, commessa, attività, ore, costo €, ricavo €, note), raggruppamento per cliente/commessa/utente, totali per gruppo e riepilogo KPI.</li>
@@ -1024,6 +1255,24 @@ function renderGuideTab(){
           <li>Per un aumento dal 1° gennaio: chiudi la vecchia (fino al 31/12) e creane una nuova (dal 01/01). Non modificare i valori della vecchia.</li>
         </ul>
         <div class="g-tip">La tariffa applicata a ogni registrazione viene <b>calcolata e mantenuta sincronizzata dal server</b> (trigger): se aggiungi, modifichi o elimini una tariffa, gli importi delle registrazioni già esistenti nel suo periodo di validità vengono ricalcolati automaticamente — questo può cambiare i totali nei report storici già generati. Per un ricalcolo manuale di tutte le registrazioni usa il pulsante "↻ Ricalcola tutte le tariffe".</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>${ico('layers','tinted')} Modelli di commessa e registro delle modifiche</summary>
+      <div class="guide-body">
+        <h4>Modelli (Gestione → Modelli)</h4>
+        <ul>
+          <li>Un modello è un elenco di attività. Crealo scrivendo le attività una per riga, oppure copiandole da una commessa esistente.</li>
+          <li>Quando aggiungi una commessa in Gestione → Commesse, scegli il modello nella tendina «Attività da modello»: la commessa nasce con quelle attività, che poi modifichi come sempre.</li>
+          <li>Cambiare o eliminare un modello non tocca le commesse già create.</li>
+        </ul>
+        <h4>Registro (Gestione → Registro)</h4>
+        <ul>
+          <li>Elenca chi ha creato, modificato o eliminato ore, commesse, attività, clienti, tariffe, budget e modelli, e quando; per una modifica mostra il valore prima e dopo.</li>
+          <li>Lo scrive il database stesso: vale anche per modifiche fatte fuori dall'app, che compaiono come «Sistema». Lo leggono solo gli admin e nessuno lo può alterare dall'app.</li>
+          <li>Filtri per tipo e per utente; <b>Carica altri</b> va indietro nel tempo, 100 righe alla volta.</li>
+        </ul>
       </div>
     </details>
 
@@ -1242,10 +1491,10 @@ window.openProjectDetail=openProjectDetail;
 
 // ═══ MANAGE ═══
 function renderManage(){
-  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:`${ico('euro','tinted')} Tariffe`},{id:'backup',l:`${ico('save','tinted')} Backup`},{id:'guide',l:`${ico('book','tinted')} Guida`}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
+  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:`${ico('euro','tinted')} Tariffe`},{id:'templates',l:`${ico('layers','tinted')} Modelli`},{id:'log',l:`${ico('history','tinted')} Registro`},{id:'backup',l:`${ico('save','tinted')} Backup`},{id:'guide',l:`${ico('book','tinted')} Guida`}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
   renderMC();
 }
-function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};renderManage()}
+function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};if(activeMgmt==='log')auditState.rows=null;renderManage()}
 function _mgmtFilteredProjects(){
   return db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
 }
@@ -1264,16 +1513,159 @@ function renderMC(){
   if(activeMgmt==='client'){
     el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'var(--green-soft)':'var(--hairline)'};color:${c.active?'var(--green)':'var(--text-dim)'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">${ico('trash','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='project'){
-    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea><button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea>${db.templates.length?`<select id="mp-template" title="Le attività del modello si aggiungono alla commessa"><option value="">— Attività da modello (facoltativo) —</option>${db.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.activities.length})</option>`).join('')}</select>`:''}<button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
     el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'var(--green-soft)':'var(--hairline)'};color:${u.active!==false?'var(--green)':'var(--text-dim)'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?`${ico('check')} Riattiva`:`${ico('pause')} Sospendi`}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">${ico('key','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">${ico('link','tinted')} Link di collegamento</button></div></div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
     renderBackupTab();
+  } else if(activeMgmt==='templates'){
+    renderTemplatesTab();
+  } else if(activeMgmt==='log'){
+    renderAuditTab();
   } else if(activeMgmt==='guide'){
     renderGuideTab();
   }
+}
+
+// ═══ MODELLI DI COMMESSA ═══
+// Un modello è un elenco di attività: chi crea una commessa lo sceglie e
+// la commessa nasce con quelle attività (poi si modificano come sempre).
+// Le attività si scrivono una per riga; la nota di un'attività che resta
+// con lo stesso nome si conserva.
+function tplActsFromText(txt,old=[]){
+  const seen=new Set();
+  return txt.split('\n').map(r=>r.trim()).filter(r=>r&&!seen.has(r.toLowerCase())&&seen.add(r.toLowerCase()))
+    .map(name=>({name,note:old.find(a=>a.name===name)?.note||''}));
+}
+function renderTemplatesTab(){
+  const el=document.getElementById('mgmt-content');
+  if(!db.templatesAvailable){el.innerHTML=`<div class="mgmt-panel"><p class="empty-text">Database da aggiornare: riesegui <code>supabase/schema.sql</code> per usare i modelli.</p></div>`;return}
+  const withActs=db.projects.filter(p=>p.activities?.length);
+  el.innerHTML=`<div class="mgmt-panel">
+    <p class="mgmt-hint">Un modello è un elenco di attività. Quando crei una commessa in <b>Commesse</b> puoi sceglierne uno: la commessa nasce già con quelle attività.</p>
+    <div class="mgmt-list">${db.templates.map(t=>`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(t.name)}</span><span class="mgmt-item-meta">${t.activities.length} attività</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-template" data-id="${t.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-template" data-id="${t.id}" title="Elimina">${ico('trash','tinted')}</button></div></div><div class="tpl-acts">${t.activities.map(a=>`<span class="proj-act-tag"${a.note?` title="${esc(a.note)}"`:''}>${esc(a.name)}</span>`).join('')||'<span class="empty-text">Nessuna attività</span>'}</div></div>`).join('')||'<p class="empty-text">Nessun modello</p>'}</div>
+    <div class="mgmt-form"><input id="tpl-name" placeholder="Nome modello"><textarea id="tpl-acts" rows="3" placeholder="Attività, una per riga"></textarea><button class="add-btn-sm" onclick="addTemplate()">+ Crea modello</button></div>
+    ${withActs.length?`<div class="mgmt-form"><select id="tpl-from"><option value="">— Copia le attività di una commessa —</option>${withActs.map(p=>`<option value="${p.id}">${esc(p.code||'—')} - ${esc(p.name)} (${p.activities.length})</option>`).join('')}</select><button class="btn-outline" onclick="templateFromProject()">${ico('copy','tinted')} Crea modello dalla commessa</button></div>`:''}
+  </div>`;
+}
+async function addTemplate(){
+  const name=document.getElementById('tpl-name').value.trim();
+  const acts=tplActsFromText(document.getElementById('tpl-acts').value);
+  if(!name){showToast('Nome richiesto','error');return}
+  if(!acts.length){showToast('Scrivi almeno un\'attività','error');return}
+  const ok=await dbWrite(supa.from('project_templates').insert({id:gid(),name,activities:acts}),`Modello «${name}» creato`);
+  if(ok)renderManage();
+}
+async function templateFromProject(){
+  const p=db.projects.find(x=>x.id===document.getElementById('tpl-from').value);
+  if(!p){showToast('Scegli una commessa','error');return}
+  const ok=await dbWrite(supa.from('project_templates').insert({id:gid(),name:p.name,activities:p.activities.map(a=>({name:a.name,note:a.note||''}))}),`Modello «${p.name}» creato: rinominalo se serve`);
+  if(ok)renderManage();
+}
+function editTemplateModal(id){
+  const t=db.templates.find(x=>x.id===id);if(!t)return;
+  openModal(`<h3>${ico('edit','tinted pill')} Modifica Modello</h3><div class="modal-field"><label>Nome</label><input id="et-name" value="${esc(t.name)}"></div><div class="modal-field"><label>Attività, una per riga</label><textarea id="et-acts" rows="8">${esc(t.activities.map(a=>a.name).join('\n'))}</textarea></div><p class="mgmt-hint">Cambiare un modello non tocca le commesse già create.</p><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveTemplateEdit('${id}')">Salva</button></div>`);
+}
+async function saveTemplateEdit(id){
+  const t=db.templates.find(x=>x.id===id);if(!t)return;
+  const name=document.getElementById('et-name').value.trim();
+  const acts=tplActsFromText(document.getElementById('et-acts').value,t.activities);
+  if(!name){showToast('Nome richiesto','error');return}
+  if(!acts.length){showToast('Scrivi almeno un\'attività','error');return}
+  closeModal();
+  const ok=await dbWrite(supa.from('project_templates').update({name,activities:acts}).eq('id',id),'Modello aggiornato');
+  if(ok)renderManage();
+}
+async function delTemplate(id){
+  const t=db.templates.find(x=>x.id===id);if(!t)return;
+  if(!confirm(`Eliminare il modello «${t.name}»? Le commesse già create non cambiano.`))return;
+  const ok=await dbWrite(supa.from('project_templates').delete().eq('id',id),'Modello eliminato');
+  if(ok)renderManage();
+}
+
+// ═══ REGISTRO DELLE MODIFICHE (solo admin) ═══
+// Le righe le scrive il trigger audit_registra sul database; qui si leggono
+// a pagine di 100, dalla più recente. Si ricaricano solo aprendo la scheda,
+// cambiando filtro o con «Aggiorna», non a ogni modifica in tempo reale.
+const AUDIT_PAGE=100;
+let auditState={table:'',actor:'',rows:null,more:false,loading:false,error:''};
+const AUDIT_TABLES={entries:'Ore',projects:'Commessa',activities:'Attività',clients:'Cliente',rates:'Tariffa',project_finance:'Budget €',project_templates:'Modello'};
+const AUDIT_FIELDS={date:'data',hours:'ore',note:'nota',start_time:'dalle',end_time:'alle',project_id:'commessa',client_id:'cliente',activity_id:'attività',user_id:'utente',name:'nome',code:'codice',referente:'referente',status:'stato',budget_hours:'budget ore',deadline:'fine lavori',assigned_users:'utenti assegnati',email:'email',active:'attivo',budget:'budget €',cost_rate:'costo €/h',client_rate:'tariffa cliente €/h',valid_from:'dal',valid_to:'al',activities:'attività'};
+const AUDIT_SKIP=['id','created_at','legacy_id'];
+async function loadAudit(more){
+  if(auditState.loading)return;
+  auditState.loading=true;auditState.error='';
+  const from=more?(auditState.rows||[]).length:0;
+  let q=supa.from('audit_log').select('*').order('id',{ascending:false}).range(from,from+AUDIT_PAGE-1);
+  if(auditState.table)q=q.eq('table_name',auditState.table);
+  if(auditState.actor)q=q.eq('actor',auditState.actor);
+  const {data,error}=await q;
+  auditState.loading=false;
+  if(error){console.error(error);auditState.error=/audit_log/.test(error.message||'')?'Database da aggiornare: riesegui supabase/schema.sql per usare il registro.':friendlyDbError(error);auditState.rows=auditState.rows||[];}
+  else{auditState.rows=(more?auditState.rows:[]).concat(data||[]);auditState.more=(data||[]).length===AUDIT_PAGE}
+  if(activeMgmt==='log')renderAuditTab();
+}
+function auditFilter(){
+  auditState.table=document.getElementById('al-table').value;
+  auditState.actor=document.getElementById('al-actor').value;
+  auditState.rows=null;renderAuditTab();
+}
+function auditVal(k,v){
+  if(v==null||v==='')return'—';
+  if(k==='project_id'){const p=db.projects.find(x=>x.id===v);return p?(p.code?p.code+' - ':'')+p.name:'(eliminata)'}
+  if(k==='client_id')return db.clients.find(x=>x.id===v)?.name||'(eliminato)';
+  if(k==='activity_id'){for(const p of db.projects){const a=p.activities.find(x=>x.id===v);if(a)return a.name}return'(eliminata)'}
+  if(k==='user_id')return db.users.find(x=>x.id===v)?.name||'(eliminato)';
+  if(k==='assigned_users')return Array.isArray(v)&&v.length?v.map(id=>db.users.find(u=>u.id===id)?.name||'?').join(', '):'tutti';
+  if(k==='activities')return Array.isArray(v)?v.map(a=>a.name).join(', '):'—';
+  if(k==='status')return{active:'attiva',completed:'completata',suspended:'sospesa'}[v]||v;
+  if(k==='date'||k==='deadline'||k==='valid_from'||k==='valid_to')return fmtDate(v);
+  if(k==='start_time'||k==='end_time')return hhmm(v);
+  if(typeof v==='boolean')return v?'sì':'no';
+  return String(v);
+}
+// Di cosa parla una riga del registro: dati della riga stessa, completati da
+// quelli attuali (in una modifica il registro ha solo i campi cambiati)
+function auditSubject(r){
+  const d=Object.assign({},r.old_data||{},r.new_data||{});
+  if(r.table_name==='entries'){
+    const e=db.entries.find(x=>x.id===r.row_id);
+    const u=d.user_id||e?.userId,dt=d.date||e?.date,pid=d.project_id||e?.projectId;
+    return`${esc(auditVal('user_id',u))} · ${esc(auditVal('date',dt))} · ${esc(auditVal('project_id',pid))}`;
+  }
+  if(r.table_name==='projects'||r.table_name==='project_finance'){const p=db.projects.find(x=>x.id===r.row_id);return esc(p?(p.code?p.code+' - ':'')+p.name:(d.name||'(commessa eliminata)'))}
+  if(r.table_name==='activities'){let n=d.name;if(!n)for(const p of db.projects){const a=p.activities.find(x=>x.id===r.row_id);if(a){n=a.name;break}}return esc((n||'(eliminata)')+(d.project_id?' · '+auditVal('project_id',d.project_id):''))}
+  if(r.table_name==='clients')return esc(d.name||db.clients.find(x=>x.id===r.row_id)?.name||'(eliminato)');
+  if(r.table_name==='project_templates')return esc(d.name||db.templates.find(x=>x.id===r.row_id)?.name||'(eliminato)');
+  if(r.table_name==='rates'){const rt=db.rates.find(x=>x.id===r.row_id);const u=d.user_id??rt?.userId,c=d.client_id??rt?.clientId,p=d.project_id??rt?.projectId;return esc([u?auditVal('user_id',u):'',c?auditVal('client_id',c):'',p?auditVal('project_id',p):''].filter(Boolean).join(' · ')||'Tariffa generale')}
+  return esc(r.row_id);
+}
+function auditChanges(r){
+  const keys=Object.keys(r.action==='delete'?r.old_data||{}:r.new_data||{}).filter(k=>!AUDIT_SKIP.includes(k)&&AUDIT_FIELDS[k]);
+  if(r.action==='update')return keys.map(k=>`<span class="al-chg"><b>${AUDIT_FIELDS[k]}</b> ${esc(auditVal(k,r.old_data?.[k]))} → ${esc(auditVal(k,r.new_data?.[k]))}</span>`).join('');
+  const src=r.action==='delete'?r.old_data:r.new_data;
+  // In creazione/eliminazione bastano i campi che dicono quanto e cosa
+  const main={entries:['hours','start_time','end_time','activity_id','note'],rates:['cost_rate','client_rate','valid_from','valid_to'],project_finance:['budget'],projects:['code','status'],activities:[],clients:['referente'],project_templates:['activities']}[r.table_name]||[];
+  return main.filter(k=>src?.[k]!=null&&src[k]!=='').map(k=>`<span class="al-chg"><b>${AUDIT_FIELDS[k]}</b> ${esc(auditVal(k,src[k]))}</span>`).join('');
+}
+function renderAuditTab(){
+  const el=document.getElementById('mgmt-content');
+  if(auditState.rows===null&&!auditState.loading){loadAudit(false)}
+  const rows=auditState.rows||[];
+  const actL={insert:'Creato',update:'Modificato',delete:'Eliminato'};
+  const sel='style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"';
+  el.innerHTML=`<div class="mgmt-panel">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <select id="al-table" onchange="auditFilter()" ${sel}><option value="">Tutto</option>${Object.entries(AUDIT_TABLES).map(([k,l])=>`<option value="${k}" ${auditState.table===k?'selected':''}>${l}</option>`).join('')}</select>
+      <select id="al-actor" onchange="auditFilter()" ${sel}><option value="">Tutti gli utenti</option>${db.users.map(u=>`<option value="${u.id}" ${auditState.actor===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+      <button class="btn-outline" onclick="auditState.rows=null;renderAuditTab()">${ico('refresh','tinted')} Aggiorna</button>
+    </div>
+    ${auditState.error?`<p class="empty-text">${esc(auditState.error)}</p>`:''}
+    ${auditState.rows===null||auditState.loading&&!rows.length?'<p class="empty-text">Caricamento…</p>':rows.length?`<div class="table-wrap"><table class="audit-table"><thead><tr><th>Quando</th><th>Chi</th><th>Cosa</th><th>Dettaglio</th></tr></thead><tbody>${rows.map(r=>{const u=db.users.find(x=>x.id===r.actor);return`<tr><td class="al-when">${new Date(r.at).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${u?`<span class="user-tag" style="background:${safeColor(u.color)}22;color:${safeColor(u.color)}">${esc(u.name)}</span>`:`<span class="mgmt-item-meta">${r.actor?'(utente eliminato)':'Sistema'}</span>`}</td><td><span class="al-act al-${r.action}">${actL[r.action]||r.action}</span> ${AUDIT_TABLES[r.table_name]||esc(r.table_name)}</td><td><div>${auditSubject(r)}</div><div class="al-chgs">${auditChanges(r)}</div></td></tr>`}).join('')}</tbody></table></div>${auditState.more?`<div style="text-align:center;margin-top:12px"><button class="btn-outline" onclick="loadAudit(true)">Carica altri</button></div>`:''}`:auditState.error?'':'<p class="empty-text">Nessuna modifica registrata</p>'}
+    <p class="mgmt-hint" style="margin-top:12px">Il registro parte dalla versione 5.0.0: le modifiche precedenti non ci sono. «Sistema» indica modifiche fatte dal Dashboard di Supabase o dagli script.</p>
+  </div>`;
 }
 
 // ═══ RATES TAB ═══
@@ -1396,7 +1788,13 @@ async function addProject(){
   const pid=gid();
   const {error:insErr}=await supa.from('projects').insert({id:pid,client_id:cid,name:n,code,referente:ref,status:'active',budget_hours:bh,deadline:dl,assigned_users:[],note});
   if(insErr){console.error(insErr);updateSyncStatus('err');showToast(friendlyDbError(insErr),'error');return}
-  const ok=await dbWrite(supa.from('project_finance').upsert({project_id:pid,budget:b}),n+' aggiunta');
+  // Attività dal modello scelto (prima del dbWrite finale, che ricarica tutto)
+  const tpl=db.templates.find(t=>t.id===document.getElementById('mp-template')?.value);
+  if(tpl&&tpl.activities.length){
+    const {error:actErr}=await supa.from('activities').insert(tpl.activities.map(a=>({id:gid(),project_id:pid,name:a.name,note:a.note||''})));
+    if(actErr){console.error(actErr);showToast('Commessa creata, ma le attività del modello no: '+friendlyDbError(actErr),'error')}
+  }
+  const ok=await dbWrite(supa.from('project_finance').upsert({project_id:pid,budget:b}),n+' aggiunta'+(tpl?` con le attività di «${tpl.name}»`:''));
   if(ok)renderManage();
 }
 function editProjectModal(id){const p=db.projects.find(x=>x.id===id);if(!p)return;const au=p.assignedUsers||[];const usersHtml=db.users.map(u=>`<div class="export-check-item"><input type="checkbox" id="ep-usr-${u.id}" ${au.includes(u.id)?'checked':''}><label for="ep-usr-${u.id}" style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${safeColor(u.color)};display:inline-block"></span>${esc(u.name)}</label></div>`).join('');openModal(`<h3>${ico('edit','tinted pill')} Modifica Commessa</h3><div class="modal-field"><label>Codice</label><input id="ep-code" value="${esc(p.code||'')}" placeholder="001/26"></div><div class="modal-field"><label>Nome</label><input id="ep-name" value="${esc(p.name)}"></div><div class="modal-field"><label>Cliente</label><select id="ep-client">${db.clients.map(c=>`<option value="${c.id}" ${c.id===p.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="modal-field"><label>Referente</label><input id="ep-ref" value="${esc(p.referente||'')}"></div><div class="modal-field"><label>Budget €</label><input type="number" id="ep-budget" value="${p.budget||''}"></div><div class="modal-field"><label>Budget Ore</label><input type="number" id="ep-hours" value="${p.budgetHours||''}"></div><div class="modal-field"><label>Data Fine Lavori</label><input type="date" id="ep-deadline" value="${p.deadline||''}"></div><div class="modal-field"><label>Stato</label><select id="ep-status"><option value="active" ${p.status==='active'?'selected':''}>Attivo</option><option value="completed" ${p.status==='completed'?'selected':''}>Completato</option><option value="suspended" ${p.status==='suspended'?'selected':''}>Sospeso</option></select></div><div class="modal-field"><label>Note</label><textarea id="ep-note" rows="4" placeholder="Annotazioni sulla commessa">${esc(p.note||'')}</textarea></div><div class="modal-field"><label>Utenti assegnati <span style="color:var(--text-dim);font-weight:400;font-size:10px">(vuoto = tutti)</span></label><div class="export-col-grid" style="margin-top:4px">${usersHtml}</div></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveProjectEdit('${id}')">Salva</button></div>`)}
@@ -1581,6 +1979,7 @@ function _getExpConfig(){
     title:document.getElementById('exp-title').value||'Report Ore',
     cols:{
       date:document.getElementById('exp-col-date').checked,
+      time:document.getElementById('exp-col-time').checked,
       user:document.getElementById('exp-col-user').checked,
       client:document.getElementById('exp-col-client').checked,
       project:document.getElementById('exp-col-project').checked,
@@ -1605,6 +2004,7 @@ function generateReportData(cfg){
     const usr=db.users.find(x=>x.id===e.userId);
     return{
       date:e.date,
+      time:timeRange(e),
       user:usr?.name||'?',
       client:cl?.name||'?',
       project:(pr?.code?pr.code+' - ':'')+( pr?.name||'?'),
@@ -1656,6 +2056,7 @@ function generateReportData(cfg){
 function _buildTableHead(cfg){
   const h=[];
   if(cfg.cols.date)h.push('Data');
+  if(cfg.cols.time)h.push('Orario');
   if(cfg.cols.user)h.push('Utente');
   if(cfg.cols.client)h.push('Cliente');
   if(cfg.cols.project)h.push('Commessa');
@@ -1670,6 +2071,7 @@ function _buildTableHead(cfg){
 function _buildTableRow(r,cfg){
   const row=[];
   if(cfg.cols.date)row.push(r.date);
+  if(cfg.cols.time)row.push(r.time);
   if(cfg.cols.user)row.push(r.user);
   if(cfg.cols.client)row.push(r.client);
   if(cfg.cols.project)row.push(r.project);
@@ -1887,6 +2289,7 @@ function updateHeaderClock(){
   selectedWeek=getWeekStart(todayStr());
   updateHeaderClock();
   setInterval(updateHeaderClock,1000);
+  setInterval(tickTimer,1000);
 
   // Pulizia: la vecchia versione salvava l'intero DB (hash password inclusi)
   // in localStorage — rimuovi ogni residuo dai dispositivi
