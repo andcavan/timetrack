@@ -44,6 +44,20 @@ Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pub
 - Il timer in corso si vede ora nella zona «Tempo», sopra i campi delle ore.
 - Al telefono il pannello ha margini più stretti e i pulsanti Registra Ore e Avvia timer occupano tutta la riga.
 
+### [5.2.1] — 2026-11-02
+
+**Da rieseguire `supabase/schema.sql`** (si riesegue come sempre senza perdere dati), poi si pubblica `app.js`.
+
+**Corretto**
+- **Modifica registrazione**: su una registrazione di una commessa completata o sospesa, o di un cliente disattivato, i menu Cliente e Commessa ripiegavano sulla prima voce, e salvando anche solo una nota le ore finivano su un'altra commessa. Ora la commessa della registrazione resta sempre in elenco, e le altre proposte sono solo quelle attive e assegnate all'utente. Se la registrazione non ha attività, il menu non ne sceglie una a caso.
+
+**Sicurezza**
+- Il server fa sulle ore gli stessi controlli dell'app: un operatore registra ore e avvia il timer solo su commesse **attive** e **assegnate a lui** (o a tutti), anche scrivendo direttamente all'API. Le ore già registrate su una commessa chiusa si correggono ancora (ore, orario, nota), ma non si spostano su commesse non permesse. L'admin resta libero.
+- Per tutti, una registrazione deve avere il **cliente della sua commessa** e un'**attività di quella commessa**: prima si poteva salvare una riga incoerente, con le tariffe calcolate sul cliente sbagliato.
+- La **data di creazione** di una registrazione la decide il server e non si cambia più.
+- **Nome e username** di un utente li cambia solo l'admin (come il ruolo): un operatore non può più rinominarsi come un collega o come l'amministratore. Il colore resta modificabile.
+- **Cosa riceve un operatore dal server**: solo le commesse assegnate a lui (o a tutti) e quelle dove ha già registrato ore, con le loro attività e i loro clienti, e solo il proprio profilo. Prima arrivavano a tutti anche le commesse riservate ad altri (con note e budget ore), tutti i clienti con referenti ed email, e email, username e ruolo dei colleghi: l'app non li mostrava, ma bastava interrogare l'API. Per l'operatore l'app resta identica; un QR di una commessa non sua dice «non trovata o non assegnata a te».
+
 ### [5.2.0] — 2026-11-02
 
 Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pubblicano `app.js`, `index.html` e `style.css`.
