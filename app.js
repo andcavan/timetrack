@@ -876,6 +876,12 @@ function qrLabelsFiltered(){
   if(!ids.length){showToast('Nessuna commessa attiva fra quelle elencate','error');return}
   qrLabelsPdf(ids,false);
 }
+// Il QR nella scheda della commessa (pagina Commesse): codice a vista, con i
+// pulsanti per quello delle attività e per le etichette
+function qrDetailHtml(p){
+  if(!qrAvailable()||!qrBase())return'';
+  return`<div class="proj-activities"><strong>Codice QR:</strong><div class="qr-detail"><div class="qr-box">${qrSvg(qrProjectLink(p.id),132)}</div><div class="qr-detail-side"><p class="qr-intro">Inquadrato con il telefono apre TimeTrack su questa commessa, per avviare il timer o scrivere le ore.</p><div class="qr-detail-btns"><button class="btn-outline" onclick="qrProjectModal('${esc(p.id)}')" title="Codice più grande, anche per una singola attività">${ico('qr','tinted')} Ingrandisci</button><button class="btn-outline" onclick="qrLabelsPdf(['${esc(p.id)}'],true)" title="Un'etichetta per la commessa e una per ogni attività">${ico('file','tinted')} Etichette PDF</button></div></div></div></div>`;
+}
 // Il link di collegamento come QR: si inquadra dal monitor dell'admin
 function qrConnectionHtml(){
   const l=connectionLink();
@@ -1363,7 +1369,7 @@ function renderGuideTab(){
         <ul>
           <li>Inquadra l'etichetta QR di una commessa con la fotocamera del telefono: TimeTrack si apre con commessa, cliente, attività (se l'etichetta la indica) e la data di oggi già compilati. Se non sei ancora entrato, prima fai l'accesso: la commessa ti aspetta.</li>
           <li>Nella scheda che compare scegli <b>${ico('play','tinted')} Avvia timer</b> o <b>Ore a mano</b>. Se il timer corre già su quella commessa, la scheda offre <b>Ferma e registra</b>; se corre su un'altra, <b>Ferma e avvia qui</b> registra le ore della prima e fa partire la nuova. Senza un tocco non si registra niente.</li>
-          <li>Le etichette le crea l'admin in Gestione → Commesse: ${ico('qr','tinted')} sulla riga della commessa (codice a video ed etichette PDF della commessa e delle sue attività) o <b>Etichette QR</b> in alto (una per ogni commessa attiva elencata). Una commessa completata, sospesa o non assegnata a te dà un avviso e non si compila.</li>
+          <li>Le etichette le crea l'admin: nella scheda della commessa (pagina Commesse) il codice si vede subito; in Gestione → Commesse c'è ${ico('qr','tinted')} sulla riga della commessa (codice a video ed etichette PDF della commessa e delle sue attività) o <b>Etichette QR</b> in alto (una per ogni commessa attiva elencata). Una commessa completata, sospesa o non assegnata a te dà un avviso e non si compila.</li>
           <li>L'app non chiede mai la password dopo un QR, solo nella sua schermata di accesso: se un'etichetta porta a una pagina diversa che la chiede, è un'etichetta falsa e va segnalata.</li>
           <li>Per collegare un telefono nuovo l'admin apre Gestione → Utenti → ${ico('link','tinted')} <b>Link di collegamento</b> e il collega inquadra il QR dal monitor.</li>
         </ul>
@@ -1695,6 +1701,7 @@ function openProjectDetail(id){
     </div>
     ${notesHtml?`<div class="proj-activities"><strong>Note:</strong><div class="proj-note-list">${notesHtml}</div></div>`:''}
     <div class="proj-activities"><strong>Ore per attività:</strong><div class="proj-act-list">${actHtml}</div></div>
+    ${qrDetailHtml(p)}
     ${_a()?`<div class="proj-activities"><strong>Ore per utente:</strong><div class="proj-act-list">${userHtml}</div></div>`:''}
     <div class="proj-activities"><strong>Ultime registrazioni:</strong><div style="margin-top:6px">${recentHtml}</div></div>
     <div class="modal-actions" style="flex-wrap:wrap;gap:6px">

@@ -408,3 +408,8 @@ tr{border-bottom:1px solid var(--hairline)}
 .qr-card-warn{font-size:13px;color:var(--orange);margin:4px 0 0}
 .qr-card-hint{font-size:11px;color:var(--orange)}
 #qrc-actions{flex-wrap:wrap}
+.qr-detail{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.qr-detail .qr-box{margin:0}
+.qr-detail-side{flex:1;min-width:180px}
+.qr-detail-side .qr-intro{margin:0 0 8px}
+.qr-detail-btns{display:flex;gap:6px;flex-wrap:wrap}
