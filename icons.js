@@ -4,6 +4,7 @@
 // linea di base e hanno lo stesso aspetto su ogni dispositivo. I tracciati stanno
 // in uno sprite nascosto; ogni icona sul DOM è un <use> che lo referenzia.
 const ICONS = {
+  qr: '<rect x="3.4" y="3.4" width="6.6" height="6.6" rx="1"/><rect x="14" y="3.4" width="6.6" height="6.6" rx="1"/><rect x="3.4" y="14" width="6.6" height="6.6" rx="1"/><path d="M14 14h2.6v2.6H14zM18 18h2.6v2.6H18zM14 20.6h1.4M20.6 14v1.4"/>',
   key: '<circle cx="7.8" cy="15.8" r="3.8"/><path d="m10.6 13.1 9.6-9.6"/><path d="m17.4 6.3 2.4 2.4M15 8.7l2.4 2.4"/>',
   edit: '<path d="M4 20h4.2L18.9 9.3a2.2 2.2 0 0 0-3.1-3.1L5 16.9V20z"/><path d="m14.6 7.4 3.1 3.1"/>',
   trash: '<path d="M4 6.4h16"/><path d="M9.5 6.4V4.6a1.1 1.1 0 0 1 1.1-1.1h2.8a1.1 1.1 0 0 1 1.1 1.1v1.8"/><path d="m6.4 6.4.9 13.1a1.2 1.2 0 0 0 1.2 1.1h7a1.2 1.2 0 0 0 1.2-1.1l.9-13.1"/><path d="M10.4 10v7M13.6 10v7"/>',
@@ -55,7 +56,7 @@ const ICON_TINT = {
   clipboard: 'accent', calendar: 'accent', settings: 'text-dim', book: 'text-dim',
   cloud: 'accent', save: 'accent', users: 'accent', user: 'accent', wrench: 'purple',
   folder: 'orange', bolt: 'orange', plug: 'accent', dot: 'accent',
-  play: 'green', stop: 'red', download: 'accent', history: 'purple', layers: 'orange'
+  play: 'green', stop: 'red', download: 'accent', history: 'purple', layers: 'orange', qr: 'accent'
 };
 
 function icoEsc(s) {

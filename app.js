@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.0.0';
+const APP_VERSION='5.1.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -78,6 +78,26 @@ function connectionLink(c){
   if(!confirm(`Collegare TimeTrack su questo dispositivo al progetto Supabase ${host}?`))return;
   try{saveSupaConfig(url,key);localStorage.removeItem('tt_saved_email')}catch(e){alert(e.message)}
 })();
+// Indirizzo da un codice QR di commessa (…#/q/c/<id commessa>[/<id attività>]):
+// si toglie subito dalla barra (Indietro o un aggiornamento non lo ripetono) e
+// si tiene in sessionStorage finché l'utente non è entrato, anche se prima
+// deve fare l'accesso. Non scrive niente: lo applica qrApplyPending().
+const QR_PENDING_KEY='tt_qr_pending',QR_PENDING_MAX_MS=15*60*1000;
+function qrParseHash(h){
+  const m=/^#\/?q\/c\/([^/?#\s]+)(?:\/([^/?#\s]+))?\/?$/.exec(String(h||''));
+  if(!m)return null;
+  const dec=s=>{try{return decodeURIComponent(s)}catch(e){return s}};
+  return{kind:'c',projectId:dec(m[1]),activityId:m[2]?dec(m[2]):''};
+}
+function qrTakeFromHash(){
+  if(!/^#\/?q\//.test(location.hash||''))return false;
+  const p=qrParseHash(location.hash);
+  try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+  if(!p)return false;
+  try{sessionStorage.setItem(QR_PENDING_KEY,JSON.stringify({...p,at:Date.now()}))}catch(e){}
+  return true;
+}
+qrTakeFromHash();
 const _supaCfg=supaConfig();
 const supa=_supaCfg?window.supabase.createClient(_supaCfg.url,_supaCfg.key):null;
 
@@ -311,6 +331,7 @@ function doLogin(user){
   startRealtimeSubscription();
   startPolling();
   renderHeader();setView('timesheet');
+  qrApplyPending();
 }
 
 async function logout(){
@@ -489,6 +510,7 @@ function showConnectionLinkModal(){
       <input id="il-link" readonly value="${esc(connectionLink())}" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
       <button class="add-btn-sm" onclick="copyInviteLink()">${ico('copy')} Copia</button>
     </div>
+    ${qrConnectionHtml()}
     <p style="font-size:12px;color:var(--text-dim);margin:12px 0 0">Mettilo anche in Supabase come <b>Site URL</b> (Authentication → URL Configuration), e aggiungi fra i <b>Redirect URLs</b> l'indirizzo dell'app seguito da <code>**</code>: così inviti e reimpostazioni password tornano qui già collegati.</p>
     <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Chiudi</button></div>`);
 }
@@ -634,20 +656,22 @@ function tickTimer(){
   if(a)a.textContent=el;if(b)b.textContent=el;
 }
 async function startTimer(){
-  if(db.timer){showToast('C\'è già un timer in corso','error');return}
+  if(db.timer){showToast('C\'è già un timer in corso','error');return false}
   const projectId=document.getElementById('qe-project').value;
   const activityId=document.getElementById('qe-activity').value;
-  if(!projectId||!activityId){showToast('Scegli commessa e attività','error');return}
+  if(!projectId||!activityId){showToast('Scegli commessa e attività','error');return false}
   const note=document.getElementById('qe-note').value||'';
   const ok=await dbWrite(supa.from('timers').insert({user_id:currentUser.id,project_id:projectId,activity_id:activityId,note,started_at:new Date().toISOString()}),'Timer avviato');
-  if(!ok)return;
+  if(!ok)return false;
   resetQuickEntry();
   renderTimer();
+  return true;
 }
+// true se le ore sono registrate e il timer tolto (lo usa anche la scheda del QR)
 async function stopTimer(){
-  const t=db.timer;if(!t)return;
+  const t=db.timer;if(!t)return false;
   const pr=db.projects.find(p=>p.id===t.projectId);
-  if(!pr){showToast('La commessa del timer non esiste più: annullalo','error');return}
+  if(!pr){showToast('La commessa del timer non esiste più: annullalo','error');return false}
   const start=new Date(t.startedAt),end=new Date();
   const date=localYMD(start);
   const row={id:gid(),user_id:currentUser.id,client_id:pr.clientId,project_id:pr.id,activity_id:t.activityId||null,date,note:t.note||''};
@@ -655,7 +679,7 @@ async function stopTimer(){
   if(localYMD(end)===date){
     const s=start.toTimeString().slice(0,5),e=end.toTimeString().slice(0,5);
     const h=hoursBetween(s,e);
-    if(h==null){showToast('Meno di un minuto: lascia correre il timer o annullalo','error');return}
+    if(h==null){showToast('Meno di un minuto: lascia correre il timer o annullalo','error');return false}
     Object.assign(row,{start_time:s,end_time:e,hours:h});
   }else{
     // A cavallo della mezzanotte: niente orario, ore sul giorno di inizio (al massimo 24)
@@ -664,14 +688,199 @@ async function stopTimer(){
   }
   updateSyncStatus('sync');
   const {error}=await supa.from('entries').insert(row);
-  if(error){console.error(error);updateSyncStatus('err');showToast(friendlyDbError(error),'error');return}
+  if(error){console.error(error);updateSyncStatus('err');showToast(friendlyDbError(error),'error');return false}
   const ok=await dbWrite(supa.from('timers').delete().eq('user_id',currentUser.id),`${row.hours}h registrate${warn}`);
   if(ok){renderTimer();renderWeek()}
+  return ok;
 }
 async function cancelTimer(){
   if(!db.timer||!confirm('Annullare il timer senza registrare le ore?'))return;
   const ok=await dbWrite(supa.from('timers').delete().eq('user_id',currentUser.id),'Timer annullato');
   if(ok)renderTimer();
+}
+
+// ═══ CODICI QR ═══
+// Un QR di commessa è solo un indirizzo: …/#/q/c/<id commessa>[/<id attività>].
+// L'id e non il codice, perché il codice si può cambiare, lasciare vuoto o
+// ripetere; il codice stampato sull'etichetta serve all'occhio (e come ripiego
+// se l'id non si trova più). Inquadrato col telefono apre l'app, che compila
+// l'Inserimento Rapido e propone il timer: nessuna scrittura senza un tocco.
+// Il disegno lo fa qrcode-generator 1.4.4 (lo stesso file di Bomtrack).
+function qrAvailable(){return typeof qrcode==='function'}
+function qrMatrix(text){
+  if(qrcode.stringToBytesFuncs&&qrcode.stringToBytesFuncs['UTF-8'])qrcode.stringToBytes=qrcode.stringToBytesFuncs['UTF-8'];
+  const q=qrcode(0,'M');q.addData(String(text),'Byte');q.make();
+  const n=q.getModuleCount(),m=[];
+  for(let r=0;r<n;r++){const row=[];for(let c=0;c<n;c++)row.push(q.isDark(r,c));m.push(row)}
+  return m;
+}
+// Tratti orizzontali di moduli scuri: [riga, colonna, lunghezza]
+function qrRuns(m){
+  const out=[];
+  m.forEach((row,r)=>{let c=0;while(c<row.length){if(!row[c]){c++;continue}let e=c;while(e<row.length&&row[e])e++;out.push([r,c,e-c]);c=e}});
+  return out;
+}
+// Nero su bianco con il margine di 4 moduli che i lettori chiedono, anche col tema scuro
+function qrSvg(text,px){
+  const m=qrMatrix(text),n=m.length+8;
+  const d=qrRuns(m).map(([r,c,l])=>`M${c+4} ${r+4}h${l}v1h-${l}z`).join('');
+  return`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" width="${px}" height="${px}" shape-rendering="crispEdges" role="img" aria-label="Codice QR"><rect width="${n}" height="${n}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+function qrPdfDraw(doc,text,x,y,size){
+  const m=qrMatrix(text),u=size/(m.length+8);
+  doc.setFillColor(255,255,255);doc.rect(x,y,size,size,'F');
+  doc.setFillColor(0,0,0);
+  qrRuns(m).forEach(([r,c,l])=>doc.rect(x+(c+4)*u,y+(r+4)*u,l*u,u,'F'));
+}
+// Base dell'indirizzo: solo da http(s), un telefono non apre il disco del PC
+function qrBase(){return /^https?:$/.test(location.protocol)?location.origin+location.pathname:''}
+function qrProjectLink(pid,aid){
+  return qrBase()+'#/q/c/'+encodeURIComponent(pid)+(aid?'/'+encodeURIComponent(aid):'');
+}
+function qrProjectLabel(p){return(p.code?p.code+' - ':'')+p.name}
+function qrCanDraw(){
+  if(!qrAvailable()){showToast('Libreria dei codici QR non caricata: controlla la connessione e ricarica','error');return false}
+  if(!qrBase()){showToast('Apri TimeTrack dal suo indirizzo web (https) per creare i codici QR','error');return false}
+  return true;
+}
+
+// ─── Arrivo da un QR ───
+function qrApplyPending(){
+  let p=null;
+  try{p=JSON.parse(sessionStorage.getItem(QR_PENDING_KEY)||'null');sessionStorage.removeItem(QR_PENDING_KEY)}catch(e){}
+  if(!p||!currentUser||!db)return false;
+  if(!(Date.now()-p.at<QR_PENDING_MAX_MS)){showToast('Codice QR scaduto: inquadralo di nuovo','error');return false}
+  return qrOpen(p);
+}
+// Con l'app già aperta (un secondo QR nella stessa scheda del browser)
+window.addEventListener('hashchange',()=>{if(qrTakeFromHash()&&currentUser)qrApplyPending()});
+function qrFindProject(id){return db.projects.find(x=>x.id===id)||db.projects.find(x=>x.code&&x.code===id)||null}
+function qrOpen(p){
+  const pr=p&&p.kind==='c'?qrFindProject(p.projectId):null;
+  if(!pr){showToast('Commessa del codice QR non trovata','error');return false}
+  if(!isProjectVisible(pr)){showToast('Questa commessa non è assegnata a te','error');return false}
+  if(pr.status!=='active'){showToast(`Commessa ${pr.status==='completed'?'completata':'sospesa'}: non si registrano ore`,'error');return false}
+  const act=p.activityId?(pr.activities||[]).find(a=>a.id===p.activityId):null;
+  // Le ore si registrano adesso: oggi, nella settimana di oggi
+  setView('timesheet');
+  const today=todayStr();
+  document.getElementById('qe-date').value=today;selectedDay=today;selectedWeek=getWeekStart(today);
+  selectProject(pr.id,qrProjectLabel(pr));
+  if(act)document.getElementById('qe-activity').value=act.id;
+  renderWeek();
+  qrCardModal(pr.id,act?act.id:'',!!p.activityId&&!act);
+  return true;
+}
+// La scheda dopo la lettura: un pulsante principale secondo lo stato del timer
+function qrCardModal(pid,aid,actMissing){
+  const pr=db.projects.find(x=>x.id===pid);if(!pr)return;
+  const cl=db.clients.find(c=>c.id===pr.clientId),acts=pr.activities||[],t=db.timer;
+  const same=!!t&&t.projectId===pid&&(!aid||t.activityId===aid);
+  const since=t?new Date(t.startedAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):'';
+  const head=`<div class="qr-card-what">${esc(qrProjectLabel(pr))}</div><div class="qr-card-sub">${esc(cl?.name||'')}</div>`;
+  let body='',btns='';
+  if(same){
+    const ta=acts.find(a=>a.id===t.activityId);
+    body=`<p class="qr-card-info"><span class="timer-dot"></span> Il timer corre su questa commessa${ta?` (${esc(ta.name)})`:''} dalle ${since}.</p>`;
+    btns=`<button class="btn-outline" onclick="closeModal()">Chiudi</button><button class="add-btn-sm timer-stop" onclick="qrCardStop()">${ico('stop')} Ferma e registra</button>`;
+  }else if(!acts.length){
+    body=`<p class="qr-card-warn">${ico('warning','tinted')} La commessa non ha attività: chiedi a un amministratore di aggiungerne una.</p>`;
+    btns=`<button class="add-btn-sm" onclick="closeModal()">Chiudi</button>`;
+  }else{
+    body=`<div class="modal-field"><label>Attività</label><select id="qrc-act" onchange="qrCardActChange()"><option value="">— Seleziona —</option>${acts.map(a=>`<option value="${esc(a.id)}" ${a.id===aid?'selected':''}>${esc(a.name)}</option>`).join('')}</select>${actMissing?'<span class="qr-card-hint">L\'attività del codice non esiste più: scegline una.</span>':''}</div>`;
+    const tp=t&&db.projects.find(x=>x.id===t.projectId);
+    if(t)body+=`<p class="qr-card-info"><span class="timer-dot"></span> C'è un timer su ${esc(tp?qrProjectLabel(tp):'un\'altra commessa')} dalle ${since}: avviando qui si ferma e le sue ore si registrano.</p>`;
+    btns=`<button class="btn-outline" onclick="qrCardManual()">${ico('edit','tinted')} Ore a mano</button>`
+      +(db.timersAvailable?`<button class="add-btn-sm" onclick="qrCardStart('${esc(pid)}')">${ico('play')} ${t?'Ferma e avvia qui':'Avvia timer'}</button>`:'');
+  }
+  openModal(`<h3>${ico('qr','tinted pill')} Commessa dal codice QR</h3>${head}${body}<div class="modal-actions" id="qrc-actions">${btns}</div>`);
+}
+function qrCardActChange(){
+  const s=document.getElementById('qrc-act'),a=document.getElementById('qe-activity');
+  if(s&&a&&!a.disabled)a.value=s.value;
+}
+function qrCardManual(){
+  qrCardActChange();closeModal();
+  const h=document.getElementById('qe-hours');if(h)h.focus();
+}
+async function qrCardStart(pid){
+  const s=document.getElementById('qrc-act'),aid=s?s.value:'';
+  if(!aid){showToast('Scegli l\'attività','error');return}
+  const pr=db.projects.find(x=>x.id===pid);if(!pr){closeModal();return}
+  const btns=[...document.querySelectorAll('#qrc-actions button')];
+  btns.forEach(b=>{b.disabled=true});
+  if(db.timer&&!(await stopTimer())){btns.forEach(b=>{b.disabled=false});return}
+  closeModal();
+  // Lo stop ricarica i dati: si ripete la scelta prima di avviare
+  selectProject(pr.id,qrProjectLabel(pr));
+  document.getElementById('qe-activity').value=aid;
+  await startTimer();
+}
+async function qrCardStop(){
+  closeModal();
+  if(await stopTimer())resetQuickEntry();
+}
+
+// ─── Codici e etichette (admin) ───
+function qrProjectModal(pid){
+  if(!_a())return;
+  const pr=db.projects.find(x=>x.id===pid);if(!pr||!qrCanDraw())return;
+  const acts=pr.activities||[];
+  openModal(`<h3>${ico('qr','tinted pill')} Codice QR della commessa</h3>
+    <p class="qr-intro">Inquadrato con il telefono apre TimeTrack su questa commessa: dopo l'accesso si avvia il timer o si scrivono le ore. Il codice non dà accesso a niente senza account.</p>
+    ${acts.length?`<div class="modal-field"><label>Attività</label><select id="qrp-act" onchange="qrProjectModalRefresh('${esc(pid)}')"><option value="">Nessuna: si sceglie dopo la lettura</option>${acts.map(a=>`<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select></div>`:''}
+    <div class="qr-box" id="qrp-box"></div>
+    <p class="qr-caption" id="qrp-caption"></p>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Chiudi</button><button class="add-btn-sm" onclick="qrLabelsPdf(['${esc(pid)}'],true)" title="Un'etichetta per la commessa e una per ogni attività">${ico('file')} Etichette PDF</button></div>`);
+  qrProjectModalRefresh(pid);
+}
+function qrProjectModalRefresh(pid){
+  const pr=db.projects.find(x=>x.id===pid),box=document.getElementById('qrp-box');if(!pr||!box)return;
+  const s=document.getElementById('qrp-act'),aid=s?s.value:'',a=(pr.activities||[]).find(x=>x.id===aid);
+  box.innerHTML=qrSvg(qrProjectLink(pid,aid),220);
+  document.getElementById('qrp-caption').textContent=qrProjectLabel(pr)+(a?' · '+a.name:'');
+}
+// Foglio A4 da 3×7 etichette con linee di taglio: QR a sinistra, testo a destra
+function qrLabelsPdf(pids,withActs){
+  if(!_a()||!qrCanDraw())return;
+  const items=[];
+  pids.forEach(id=>{const p=db.projects.find(x=>x.id===id);if(!p)return;items.push({p,a:null});if(withActs)(p.activities||[]).forEach(a=>items.push({p,a}))});
+  if(!items.length){showToast('Nessuna commessa da stampare','error');return}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const cols=3,rows=7,mx=8,my=10,w=(210-2*mx)/cols,h=(297-2*my)/rows,q=h-6,tw=w-q-6;
+  items.forEach((it,i)=>{
+    const k=i%(cols*rows);if(i&&!k)doc.addPage();
+    const x=mx+(k%cols)*w,y=my+Math.floor(k/cols)*h;
+    doc.setDrawColor(190);doc.setLineWidth(0.1);
+    if(doc.setLineDashPattern)doc.setLineDashPattern([1,1.5],0);
+    doc.rect(x,y,w,h);
+    if(doc.setLineDashPattern)doc.setLineDashPattern([],0);
+    qrPdfDraw(doc,qrProjectLink(it.p.id,it.a?.id),x+2,y+3,q);
+    const tx=x+q+3;let ty=y+8;
+    doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(10);
+    doc.text(doc.splitTextToSize(it.p.code||'—',tw)[0],tx,ty);ty+=4.6;
+    doc.setFont('helvetica','normal');doc.setFontSize(8);
+    const nl=doc.splitTextToSize(it.p.name,tw);if(nl.length>3)nl.splice(2,nl.length-2,doc.splitTextToSize(nl.slice(2).join(' '),tw-3)[0]+'…');
+    nl.forEach(l=>{doc.text(l,tx,ty);ty+=3.5});
+    const cl=db.clients.find(c=>c.id===it.p.clientId);
+    if(cl){doc.setTextColor(110);doc.setFontSize(7);doc.text(doc.splitTextToSize(cl.name,tw)[0],tx,ty+0.5);doc.setTextColor(0)}
+    if(it.a){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.splitTextToSize(it.a.name,tw).slice(0,2).forEach((l,j,arr)=>doc.text(l,tx,y+h-4-3.5*(arr.length-1-j)))}
+  });
+  doc.save(`QR-commesse-${todayStr()}.pdf`);
+  showToast(`${items.length} etichett${items.length===1?'a':'e'} QR`);
+}
+// Tutte le commesse attive fra quelle filtrate, un'etichetta per commessa
+function qrLabelsFiltered(){
+  const ids=_mgmtFilteredProjects().filter(p=>p.status==='active').map(p=>p.id);
+  if(!ids.length){showToast('Nessuna commessa attiva fra quelle elencate','error');return}
+  qrLabelsPdf(ids,false);
+}
+// Il link di collegamento come QR: si inquadra dal monitor dell'admin
+function qrConnectionHtml(){
+  const l=connectionLink();
+  if(!qrAvailable()||!/^https?:/.test(l))return'';
+  return`<div class="qr-box">${qrSvg(l,200)}</div><p class="qr-caption">Dal telefono: inquadra il codice con la fotocamera e TimeTrack si apre già collegato.</p>`;
 }
 
 // ═══ WEEK ═══
@@ -753,6 +962,7 @@ document.addEventListener('click', function(event) {
     case 'edit-client': editClientModal(id); break;
     case 'delete-project': delProject(id); break;
     case 'edit-project': editProjectModal(id); break;
+    case 'qr-project': qrProjectModal(id); break;
     case 'set-status-active': setProjectStatus(id,'active'); break;
     case 'set-status-completed': setProjectStatus(id,'completed'); break;
     case 'set-status-suspended': setProjectStatus(id,'suspended'); break;
@@ -1149,6 +1359,14 @@ function renderGuideTab(){
           <li>Scegli commessa e attività (e una nota, se vuoi) e premi <b>${ico('play','tinted')} Avvia timer</b>. Il timer resta acceso anche chiudendo la pagina e si vede da ogni dispositivo; in alto, accanto all'ora, c'è il tempo che scorre.</li>
           <li><b>${ico('stop','tinted')} Ferma e registra</b> crea la registrazione con orario di inizio e fine; <b>Annulla</b> lo butta via. Un timer a cavallo della mezzanotte registra le ore sul giorno di inizio, senza orario.</li>
         </ul>
+        <h4>Codici QR</h4>
+        <ul>
+          <li>Inquadra l'etichetta QR di una commessa con la fotocamera del telefono: TimeTrack si apre con commessa, cliente, attività (se l'etichetta la indica) e la data di oggi già compilati. Se non sei ancora entrato, prima fai l'accesso: la commessa ti aspetta.</li>
+          <li>Nella scheda che compare scegli <b>${ico('play','tinted')} Avvia timer</b> o <b>Ore a mano</b>. Se il timer corre già su quella commessa, la scheda offre <b>Ferma e registra</b>; se corre su un'altra, <b>Ferma e avvia qui</b> registra le ore della prima e fa partire la nuova. Senza un tocco non si registra niente.</li>
+          <li>Le etichette le crea l'admin in Gestione → Commesse: ${ico('qr','tinted')} sulla riga della commessa (codice a video ed etichette PDF della commessa e delle sue attività) o <b>Etichette QR</b> in alto (una per ogni commessa attiva elencata). Una commessa completata, sospesa o non assegnata a te dà un avviso e non si compila.</li>
+          <li>L'app non chiede mai la password dopo un QR, solo nella sua schermata di accesso: se un'etichetta porta a una pagina diversa che la chiede, è un'etichetta falsa e va segnalata.</li>
+          <li>Per collegare un telefono nuovo l'admin apre Gestione → Utenti → ${ico('link','tinted')} <b>Link di collegamento</b> e il collega inquadra il QR dal monitor.</li>
+        </ul>
         <h4>Griglia settimanale</h4>
         <ul>
           <li>Frecce ◀ ▶ per cambiare settimana, <b>OGGI</b> per tornare a quella corrente; in alto a destra il totale ore della settimana.</li>
@@ -1500,7 +1718,7 @@ function _mgmtFilteredProjects(){
 }
 function _mgmtProjRow(p){
   const cl=db.clients.find(c=>c.id===p.clientId);
-  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">${ico('clock','tinted')} ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'var(--green-soft)':p.status==='completed'?'var(--accent-soft-hi)':'var(--orange-soft)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:var(--green-soft);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:var(--accent-soft-hi);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">${ico('check')} Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:var(--orange-soft);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">${ico('pause')} Sospeso</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">${ico('trash','tinted')}</button></div></div>${p.note?`<div class="mgmt-item-note" title="${esc(p.note)}">${noteHtml(p.note)}</div>`:''}<div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}${a.note?`<span class="sub-item-note" title="${esc(a.note)}">${esc(a.note)}</span>`:''}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('trash','tinted')}</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
+  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">${ico('clock','tinted')} ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'var(--green-soft)':p.status==='completed'?'var(--accent-soft-hi)':'var(--orange-soft)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:var(--green-soft);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:var(--accent-soft-hi);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">${ico('check')} Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:var(--orange-soft);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">${ico('pause')} Sospeso</button><button class="mini-btn" data-action="qr-project" data-id="${p.id}" title="Codice QR ed etichette">${ico('qr','tinted')}</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">${ico('trash','tinted')}</button></div></div>${p.note?`<div class="mgmt-item-note" title="${esc(p.note)}">${noteHtml(p.note)}</div>`:''}<div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}${a.note?`<span class="sub-item-note" title="${esc(a.note)}">${esc(a.note)}</span>`:''}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('trash','tinted')}</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
 }
 function filterMgmtProjects(){
   mgmtProjectFilter.clientId=document.getElementById('mpf-client').value;
@@ -1513,7 +1731,7 @@ function renderMC(){
   if(activeMgmt==='client'){
     el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'var(--green-soft)':'var(--hairline)'};color:${c.active?'var(--green)':'var(--text-dim)'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">${ico('trash','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='project'){
-    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea>${db.templates.length?`<select id="mp-template" title="Le attività del modello si aggiungono alla commessa"><option value="">— Attività da modello (facoltativo) —</option>${db.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.activities.length})</option>`).join('')}</select>`:''}<button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
+    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"><button class="btn-outline" onclick="qrLabelsFiltered()" title="PDF con un'etichetta QR per ogni commessa attiva elencata">${ico('qr','tinted')} Etichette QR</button></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea>${db.templates.length?`<select id="mp-template" title="Le attività del modello si aggiungono alla commessa"><option value="">— Attività da modello (facoltativo) —</option>${db.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.activities.length})</option>`).join('')}</select>`:''}<button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
   } else if(activeMgmt==='user'){
     el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'var(--green-soft)':'var(--hairline)'};color:${u.active!==false?'var(--green)':'var(--text-dim)'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?`${ico('check')} Riattiva`:`${ico('pause')} Sospendi`}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">${ico('key','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">${ico('link','tinted')} Link di collegamento</button></div></div>`;
   } else if(activeMgmt==='rates'){
