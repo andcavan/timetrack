@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 5.0.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.1.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,22 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.1.0] — 2026-11-02
+
+Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pubblicano come sempre `app.js`, `index.html`, `style.css` e `icons.js`; la libreria dei QR arriva dal CDN, come le altre.
+
+**Aggiunto**
+- **Codici QR delle commesse.** Inquadrando l'etichetta con la fotocamera del telefono, TimeTrack si apre con commessa, cliente, attività (se l'etichetta la indica) e data di oggi già compilati. Chi non è ancora entrato fa prima l'accesso e poi ritrova la commessa.
+- **Scheda dopo la lettura**, con un solo pulsante principale secondo il timer: **Avvia timer**; **Ferma e registra** se il timer corre già su quella commessa; **Ferma e avvia qui** se corre su un'altra (registra le ore della prima e fa partire la nuova). C'è sempre anche **Ore a mano**. Senza un tocco non si registra niente, e ricaricando la pagina la scheda non ricompare.
+- **Etichette QR** (solo admin) in Gestione → Commesse: l'icona QR sulla riga della commessa mostra il codice a video, anche per una singola attività, e stampa il PDF con un'etichetta per la commessa e una per ogni attività. Il pulsante **Etichette QR** in alto stampa un'etichetta per ogni commessa attiva elencata. Foglio A4 da 3×7 con linee di taglio; ogni etichetta riporta codice, nome commessa, cliente e attività.
+- **QR nella scheda della commessa** (pagina Commesse, solo admin): aprendo la scheda il codice si vede subito, con i pulsanti **Ingrandisci** (anche per una singola attività) ed **Etichette PDF**.
+- **QR nell'Inserimento Rapido**: scelta una commessa, in basso a destra compare il suo codice QR, che cambia scegliendo l'attività. Un clic lo ingrandisce (l'admin può anche stampare le etichette). Senza commessa scelta non si vede.
+- **QR del link di collegamento** in Gestione → Utenti → Link di collegamento: il collega inquadra il codice dal monitor e il telefono si collega al progetto, senza copiare il link.
+- Sezione «Codici QR» nella Guida.
+
+**Sicurezza**
+- Il QR di una commessa contiene solo il suo indirizzo, senza chiavi né dati personali: senza account non apre niente. Una commessa completata, sospesa o non assegnata all'utente dà un avviso e non si compila. L'app non chiede mai la password dentro il flusso del QR, e la Guida spiega come riconoscere un'etichetta falsa.
 
 ### [5.0.0] — 2026-11-01
 

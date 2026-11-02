@@ -397,3 +397,22 @@ tr{border-bottom:1px solid var(--hairline)}
 /* L'orario ha due campi: occupa due colonne della griglia, altrimenti l'ora si taglia */
 @media(min-width:560px){.quick-grid .field-time{grid-column:span 2}}
 .time-pair input[type=time]{padding-left:10px;padding-right:8px;min-width:96px}
+/* Codici QR (5.1.0): sempre nero su bianco, anche col tema scuro, perché i lettori lo chiedono */
+.qr-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px;width:max-content;max-width:100%;margin:14px auto 6px;line-height:0}
+.qr-box svg{display:block;max-width:100%;height:auto}
+.qr-caption{font-size:12px;color:var(--text-dim);text-align:center;margin:0}
+.qr-intro{font-size:13px;color:var(--text-dim);margin:0 0 12px}
+.qr-card-what{font-size:15px;font-weight:700;color:var(--text)}
+.qr-card-sub{font-size:12px;color:var(--text-dim);margin:2px 0 14px}
+.qr-card-info{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin:4px 0 0}
+.qr-card-warn{font-size:13px;color:var(--orange);margin:4px 0 0}
+.qr-card-hint{font-size:11px;color:var(--orange)}
+#qrc-actions{flex-wrap:wrap}
+.qr-detail{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.qr-detail .qr-box{margin:0}
+.qr-detail-side{flex:1;min-width:180px}
+.qr-detail-side .qr-intro{margin:0 0 8px}
+.qr-detail-btns{display:flex;gap:6px;flex-wrap:wrap}
+.qe-qr{margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:zoom-in;color:var(--text-dim)}
+.qe-qr .qr-box{margin:0;padding:3px;border-radius:6px}
+.qe-qr-label{font-size:10px;max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

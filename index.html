@@ -17,6 +17,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
+<!-- Codici QR (dalla 5.1.0): qrcode-generator 1.4.4 (MIT), lo stesso file di Bomtrack -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:var(--text-dim);box-shadow:0 4px 12px var(--shadow-soft)">○ Caricamento...</div>
@@ -75,7 +77,7 @@
           <input type="hidden" id="qe-project">
         </div>
         <div class="field-group"><label>Cliente</label><input type="text" id="qe-client-display" disabled style="background:var(--card);cursor:not-allowed"></div>
-        <div class="field-group"><label>Attività</label><select id="qe-activity" disabled><option value="">—</option></select></div>
+        <div class="field-group"><label>Attività</label><select id="qe-activity" disabled onchange="renderQeQr()"><option value="">—</option></select></div>
         <div class="field-group"><label>Data</label><input type="date" id="qe-date"></div>
         <div class="field-group field-time"><label>Orario <span class="label-opt">facoltativo</span></label><div class="time-pair"><input type="time" id="qe-start" aria-label="Dalle" oninput="syncTimes('qe')"><span>–</span><input type="time" id="qe-end" aria-label="Alle" oninput="syncTimes('qe')"></div></div>
         <div class="field-group"><label>Ore</label><input type="number" id="qe-hours" min="0.25" max="24" step="0.25" placeholder="0" oninput="hoursTyped('qe')"></div>
@@ -85,6 +87,7 @@
       <div class="quick-actions">
         <button class="add-btn" onclick="addEntry()"><svg class="ico ic-check" aria-hidden="true"><use href="#ic-check"></use></svg> Registra Ore</button>
         <button class="btn-outline timer-start-btn" id="timer-start-btn" onclick="startTimer()" title="Avvia un timer sulla commessa e attività scelte: allo stop le ore si registrano da sole"><svg class="ico ic-play tinted" aria-hidden="true"><use href="#ic-play"></use></svg> Avvia timer</button>
+        <button type="button" class="qe-qr" id="qe-qr" style="display:none" onclick="qeQrModal()" aria-label="Codice QR della commessa scelta: clic per ingrandire"></button>
       </div>
     </div>
     <div class="week-section">
