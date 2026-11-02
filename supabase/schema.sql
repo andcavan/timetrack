@@ -262,8 +262,16 @@ begin
   nuovo := tg_op = 'INSERT' or new.project_id is distinct from old.project_id;
   -- timers non ha client_id: lo si legge dal json, che non dà errore
   cli := to_jsonb(new) ->> 'client_id';
+  -- Letta sotto la RLS di chi scrive: all'operatore una commessa non
+  -- assegnata non risulta proprio (se esiste davvero lo dice la foreign key)
   select client_id, status, assigned_users into p from public.projects where id = new.project_id;
-  if not found then return new; end if;   -- ci pensa la foreign key
+  if not found then
+    -- un sospeso non vede nulla: lo ferma la RLS, col suo messaggio
+    if nuovo and public.is_active() and not public.is_admin() then
+      raise exception 'Commessa non assegnata a te';
+    end if;
+    return new;
+  end if;
   if tg_table_name = 'entries' and cli is distinct from p.client_id then
     if nuovo or cli is distinct from (to_jsonb(old) ->> 'client_id') then
       raise exception 'Cliente diverso da quello della commessa';
@@ -603,37 +611,54 @@ revoke all on public.profiles, public.clients, public.projects,
   public.entries, public.entry_costs, public.app_settings,
   public.timers, public.project_templates, public.audit_log from anon;
 
--- PROFILES: gli utenti attivi leggono tutti i profili (nomi/colori servono
--- alla UI), un sospeso solo il proprio (l'app gli dice «Account sospeso»);
+-- PROFILES: l'admin legge tutti i profili, gli altri solo il proprio (dalla
+-- 5.2.1: all'operatore nomi, email e ruoli dei colleghi non servono, l'app
+-- non li mostra; un sospeso legge il suo e l'app gli dice «Account sospeso»);
 -- update del proprio profilo o da admin (role/active protetti dal trigger);
 -- insert/delete solo via trigger/cascade (nessuna policy = negato)
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles
-  for select to authenticated using (id = auth.uid() or public.is_active());
+  for select to authenticated using (id = auth.uid() or public.is_admin());
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles
   for update to authenticated
   using (id = auth.uid() or public.is_admin())
   with check (id = auth.uid() or public.is_admin());
 
--- CLIENTS / PROJECTS / ACTIVITIES: lettura utenti attivi, scrittura solo admin
+-- CLIENTS / PROJECTS / ACTIVITIES: scrittura solo admin. Lettura (5.2.1):
+-- l'admin tutto; l'operatore attivo le commesse assegnate a lui o a tutti,
+-- più quelle dove ha già ore (servono ai suoi report anche se poi gli è
+-- stata tolta); le attività e i clienti di quelle commesse, più i clienti
+-- delle sue ore. Le policy di attività e clienti leggono projects sotto la
+-- sua RLS, quindi ne ereditano il filtro.
 drop policy if exists clients_select on public.clients;
 create policy clients_select on public.clients
-  for select to authenticated using (public.is_active());
+  for select to authenticated using (
+    public.is_admin()
+    or (public.is_active() and (
+      exists (select 1 from public.projects p where p.client_id = clients.id)
+      or exists (select 1 from public.entries e where e.client_id = clients.id and e.user_id = auth.uid()))));
 drop policy if exists clients_admin_write on public.clients;
 create policy clients_admin_write on public.clients
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists projects_select on public.projects;
 create policy projects_select on public.projects
-  for select to authenticated using (public.is_active());
+  for select to authenticated using (
+    public.is_admin()
+    or (public.is_active() and (
+      cardinality(assigned_users) = 0
+      or auth.uid() = any(assigned_users)
+      or exists (select 1 from public.entries e where e.project_id = projects.id and e.user_id = auth.uid()))));
 drop policy if exists projects_admin_write on public.projects;
 create policy projects_admin_write on public.projects
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists activities_select on public.activities;
 create policy activities_select on public.activities
-  for select to authenticated using (public.is_active());
+  for select to authenticated using (
+    public.is_admin()
+    or (public.is_active() and exists (select 1 from public.projects p where p.id = activities.project_id)));
 drop policy if exists activities_admin_write on public.activities;
 create policy activities_admin_write on public.activities
   for all to authenticated using (public.is_admin()) with check (public.is_admin());

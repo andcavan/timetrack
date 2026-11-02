@@ -179,6 +179,12 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     rejects(() => ins('g1', 'c1', 'p1', `'ax'`), /Attività di un'altra commessa/);
     rejects(() => op(`insert into public.timers(user_id, project_id) values ('${OP}', 'pc');`), /Commessa non attiva/);
     rejects(() => op(`insert into public.timers(user_id, project_id) values ('${OP}', 'pa');`), /Commessa non assegnata/);
+    // Lettura: niente commesse altrui, né le loro attività, né clienti senza commesse sue, né i colleghi
+    assert.equal(op(`select string_agg(id, ',' order by id) from public.projects;`), 'p1,pc');
+    assert.equal(op(`select count(*) from public.activities where id = 'ax';`), '0');
+    assert.equal(op(`select string_agg(id, ',') from public.clients;`), 'c1');
+    assert.equal(op(`select string_agg(id::text, ',') from public.profiles;`), OP);
+    assert.ok(Number(as(A1)(`select count(*) from public.profiles;`)) >= 2);
     // created_at lo decide il server
     ins('g1', 'c1', 'p1', `'a1'`);
     op(`update public.entries set created_at = '2000-01-01' where id = 'g1';`);
@@ -189,6 +195,11 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     op(`update public.entries set hours = 2, note = 'ok' where id = 'g1';`);
     assert.equal(sql(`select hours || note from public.entries where id = 'g1';`), '2ok');
     rejects(() => op(`update public.entries set activity_id = 'ax' where id = 'g1';`), /Attività di un'altra commessa/);
+    // Tolta la commessa all'operatore, quella dove ha già ore la vede ancora (per i suoi report)
+    as(A1)(`update public.projects set assigned_users = '{${A1}}' where id = 'p1';`);
+    assert.equal(op(`select count(*) from public.projects where id = 'p1';`), '1');
+    assert.equal(op(`select count(*) from public.activities where project_id = 'p1';`), '2');
+    as(A1)(`update public.projects set assigned_users = '{}' where id = 'p1';`);
     // L'admin registra anche su commesse chiuse o non sue, ma sempre coerenti
     as(A1)(`insert into public.entries(id, user_id, client_id, project_id, date, hours) values ('g2', '${OP}', 'c1', 'pc', '2026-04-01', 1);`);
     rejects(() => as(A1)(`insert into public.entries(id, user_id, client_id, project_id, date, hours) values ('g3', '${A1}', 'c2', 'p1', '2026-04-01', 1);`), /Cliente diverso/);

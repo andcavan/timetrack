@@ -169,6 +169,8 @@ async function cloudSincronizza(){
 // (users, clients, projects+activities annidate, entries con costi, rates).
 // Per gli operator le query su rates/project_finance/entry_costs tornano
 // vuote per RLS: budget e costi restano a 0 e la UI già li nasconde.
+// Dalla 5.2.1 la RLS gli manda anche solo il proprio profilo e solo le
+// commesse assegnate (o dove ha ore), con le loro attività e i loro clienti.
 async function loadAll(){
   updateSyncStatus('sync');
   const [profiles,clients,projects,activities,entries,rates,finance,costs]=await Promise.all([
@@ -817,7 +819,8 @@ window.addEventListener('hashchange',()=>{if(qrTakeFromHash()&&currentUser)qrApp
 function qrFindProject(id){return db.projects.find(x=>x.id===id)||db.projects.find(x=>x.code&&x.code===id)||null}
 function qrOpen(p){
   const pr=p&&p.kind==='c'?qrFindProject(p.projectId):null;
-  if(!pr){showToast('Commessa del codice QR non trovata','error');return false}
+  // All'operatore il server non manda le commesse non assegnate a lui (5.2.1)
+  if(!pr){showToast(_a()?'Commessa del codice QR non trovata':'Commessa del codice QR non trovata o non assegnata a te','error');return false}
   if(!isProjectVisible(pr)){showToast('Questa commessa non è assegnata a te','error');return false}
   if(pr.status!=='active'){showToast(`Commessa ${pr.status==='completed'?'completata':'sospesa'}: non si registrano ore`,'error');return false}
   const act=p.activityId?(pr.activities||[]).find(a=>a.id===p.activityId):null;

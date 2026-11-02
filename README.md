@@ -47,6 +47,7 @@ Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modific
 - Per tutti, una registrazione deve avere il **cliente della sua commessa** e un'**attività di quella commessa**: prima si poteva salvare una riga incoerente, con le tariffe calcolate sul cliente sbagliato.
 - La **data di creazione** di una registrazione la decide il server e non si cambia più.
 - **Nome e username** di un utente li cambia solo l'admin (come il ruolo): un operatore non può più rinominarsi come un collega o come l'amministratore. Il colore resta modificabile.
+- **Cosa riceve un operatore dal server**: solo le commesse assegnate a lui (o a tutti) e quelle dove ha già registrato ore, con le loro attività e i loro clienti, e solo il proprio profilo. Prima arrivavano a tutti anche le commesse riservate ad altri (con note e budget ore), tutti i clienti con referenti ed email, e email, username e ruolo dei colleghi: l'app non li mostrava, ma bastava interrogare l'API. Per l'operatore l'app resta identica; un QR di una commessa non sua dice «non trovata o non assegnata a te».
 
 ### [5.2.0] — 2026-11-02
 
