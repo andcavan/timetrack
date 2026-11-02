@@ -21,8 +21,6 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
 </head>
 <body>
-<div id="sync-status" style="position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#fff;z-index:9999;background:var(--text-dim);box-shadow:0 4px 12px var(--shadow-soft)">○ Caricamento...</div>
-
 <div id="toast"></div>
 <div id="modal-root"></div>
 
@@ -55,6 +53,8 @@
   <nav class="nav" id="main-nav"></nav>
   <div class="header-right">
     <button class="timer-chip" id="timer-chip" style="display:none" onclick="setView('timesheet')" title="Timer in corso: vai a Ore"></button>
+    <!-- La nuvola dell'archivio condiviso, come in Bomtrack: stato e classe li mette cloudDisegnaStato() -->
+    <button class="cloud-stato" id="cloud-stato" style="display:none" onclick="cloudPannello()"></button>
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
     <button class="logout-btn btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
@@ -197,11 +197,11 @@
   <!-- MANAGE -->
   <div id="view-manage" class="view-panel">
     <div class="manage-wrap">
-      <h2 class="section-title"><svg class="ico ic-settings tinted pill" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione Anagrafiche</h2>
-      <div class="mgmt-tabs" id="mgmt-tabs"></div>
-      <div id="mgmt-content"></div>
-      <div class="cloud-section">
-        <div><strong><svg class="ico ic-cloud tinted" aria-hidden="true"><use href="#ic-cloud"></use></svg> Sync Cloud</strong><p>Dati salvati su Supabase con accesso autenticato e permessi per ruolo. Backup automatici lato server; export JSON disponibile nella tab Backup.</p></div>
+      <h2 class="section-title"><svg class="ico ic-settings tinted pill" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione</h2>
+      <!-- Le schede in colonna, raccolte per argomento, come in Bomtrack (renderManage in app.js) -->
+      <div class="mgmt-layout">
+        <nav class="mgmt-tabs" id="mgmt-tabs" aria-label="Sezioni di Gestione"></nav>
+        <div id="mgmt-content" class="mgmt-content"></div>
       </div>
     </div>
   </div>

@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.1.0';
+const APP_VERSION='5.2.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -101,13 +101,69 @@ qrTakeFromHash();
 const _supaCfg=supaConfig();
 const supa=_supaCfg?window.supabase.createClient(_supaCfg.url,_supaCfg.key):null;
 
-function updateSyncStatus(status){
-  const el=document.getElementById('sync-status');
+// ═══ ARCHIVIO CONDIVISO: la nuvola nell'intestazione ═══
+// Come in Bomtrack (dalla 5.2.0): un'icona a nuvola accanto all'orologio dice
+// lo stato del collegamento con Supabase. Verde e senza parole quando è tutto
+// allineato; le parole compaiono solo quando c'è qualcosa da sapere. Un clic
+// apre la scheda dell'archivio. Sostituisce il bollino fisso in basso a destra.
+const CLOUD_STATI={ok:'Sincronizzato',invio:'Sincronizzazione…',errore:'Errore di sincronizzazione',offline:'Senza rete'};
+const SYNC_MAP={ok:'ok',sync:'invio',err:'errore',off:'offline'};
+// Nell'intestazione lo spazio è poco: parole brevi, quelle intere nel suggerimento
+const CLOUD_BREVI={ok:'',invio:'Invio…',errore:'Errore',offline:'Senza rete'};
+const _cloud={stato:'ok',messaggio:'',ultimo:null,tempoReale:''};
+function supaHost(u){try{return new URL(u).host}catch(e){return String(u||'')}}
+function updateSyncStatus(status,messaggio){
+  const st=SYNC_MAP[status]||status;
+  // Senza rete resta «Senza rete» finché il browser non la ritrova
+  if(st!=='offline'&&typeof navigator!=='undefined'&&navigator.onLine===false){_cloud.stato='offline';_cloud.messaggio='';cloudDisegnaStato();return}
+  _cloud.stato=st;
+  if(st==='ok'){_cloud.ultimo=new Date();_cloud.messaggio=''}
+  else if(st==='errore')_cloud.messaggio=messaggio||'';
+  else if(st==='offline')_cloud.messaggio=messaggio||'';
+  cloudDisegnaStato();
+}
+function cloudDisegnaStato(){
+  const el=document.getElementById('cloud-stato');
   if(!el)return;
-  const colors={ok:'var(--green)',sync:'var(--orange)',err:'var(--red)',off:'var(--text-dim)'};
-  const labels={ok:`${ico('check')} Sincronizzato`,sync:'⟳ Sincronizzazione...',err:`${ico('close')} Errore sync`,off:'○ Offline'};
-  el.style.background=colors[status];
-  el.innerHTML=labels[status];
+  if(!supa||!currentUser){el.style.display='none';return}
+  el.style.display='';
+  el.className='cloud-stato cs-'+_cloud.stato;
+  const testo=CLOUD_STATI[_cloud.stato]||'';
+  const ora=_cloud.ultimo?_cloud.ultimo.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):'';
+  el.innerHTML=`${ico('cloud')}<span class="cs-testo">${esc(CLOUD_BREVI[_cloud.stato]||'')}</span>`;
+  el.title=[testo+(_cloud.stato==='ok'&&ora?' alle '+ora:''),_cloud.messaggio].filter(Boolean).join(' — ');
+  el.setAttribute('aria-label','Archivio condiviso: '+el.title);
+}
+if(typeof window!=='undefined'){
+  window.addEventListener('offline',()=>updateSyncStatus('off','Senza collegamento: le modifiche non partono finché non torna la rete'));
+  window.addEventListener('online',()=>{_cloud.stato='invio';cloudDisegnaStato();scheduleRemoteRefresh()});
+}
+// La scheda dell'archivio condiviso, dalla nuvola e da Gestione → Backup
+function cloudPannello(){
+  const c=supaConfig();if(!c||!currentUser)return;
+  const admin=_a();
+  const ora=_cloud.ultimo?_cloud.ultimo.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):'';
+  const rt={SUBSCRIBED:'attivo',CHANNEL_ERROR:'non disponibile',TIMED_OUT:'non disponibile',CLOSED:'chiuso'}[_cloud.tempoReale]||'in collegamento';
+  openModal(`<h3>${ico('cloud','tinted pill')} Archivio condiviso</h3>
+    <p class="cl-righe"><b>Progetto</b>: ${esc(supaHost(c.url))}<br>
+      <b>Accesso</b>: ${esc(currentEmail||'—')}<br>
+      <b>Stato</b>: <span class="cl-stato cs-${_cloud.stato}">${esc(CLOUD_STATI[_cloud.stato]||'')}</span>${ora?' · ultimo aggiornamento alle '+esc(ora):''}<br>
+      <b>Tempo reale</b>: ${esc(rt)} <span class="cl-nota">(in ogni caso i dati si riallineano ogni minuto)</span>
+      ${_cloud.messaggio?`<br><span class="cl-err">${esc(_cloud.messaggio)}</span>`:''}</p>
+    ${admin?`<div class="modal-field"><label>Link di collegamento per i colleghi</label>
+      <div style="display:flex;gap:6px"><input id="il-link" readonly value="${esc(connectionLink(c))}" style="flex:1" onclick="this.select()">
+      <button class="btn-outline" onclick="copyInviteLink()">${ico('copy','tinted')} Copia</button></div></div>
+      <p class="cl-nota">Chi lo apre si ritrova TimeTrack già collegato a questo progetto; il QR è in Gestione → Utenti → Link di collegamento.</p>`:''}
+    <div class="modal-actions">
+      ${admin?`<button class="btn-outline btn-danger-outline" onclick="disconnectSupa()">Scollega dispositivo</button>`:''}
+      <button class="btn-outline" onclick="closeModal()">Chiudi</button>
+      <button class="add-btn-sm" onclick="cloudSincronizza()">${ico('refresh')} Sincronizza ora</button>
+    </div>`);
+}
+async function cloudSincronizza(){
+  closeModal();
+  try{await loadAll();rerenderCurrent();showToast('Archivio sincronizzato')}
+  catch(e){console.error(e);updateSyncStatus('err',friendlyDbError(e));showToast(friendlyDbError(e),'error')}
 }
 // Carica tutte le tabelle e ricompone l'oggetto db con la forma storica
 // (users, clients, projects+activities annidate, entries con costi, rates).
@@ -126,7 +182,7 @@ async function loadAll(){
     supa.from('entry_costs').select('*'),
   ]);
   const bad=[profiles,clients,projects,activities,entries,rates,finance,costs].find(r=>r.error);
-  if(bad){updateSyncStatus('err');throw bad.error}
+  if(bad){updateSyncStatus('err',friendlyDbError(bad.error));throw bad.error}
   // Tabelle della 5.0.0: su un database non ancora aggiornato mancano, e
   // l'app deve funzionare lo stesso (senza timer e modelli) finché l'admin
   // non riesegue lo schema.
@@ -173,7 +229,7 @@ async function dbWrite(query,okMsg){
   const {error}=await query;
   if(error){
     console.error('Errore scrittura:',error);
-    updateSyncStatus('err');
+    updateSyncStatus('err',friendlyDbError(error));
     showToast(friendlyDbError(error),'error');
     return false;
   }
@@ -207,7 +263,7 @@ function startRealtimeSubscription(){
   ['profiles','clients','projects','activities','entries','rates','project_finance','entry_costs','timers','project_templates'].forEach(t=>{
     realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:t},scheduleRemoteRefresh);
   });
-  realtimeChannel.subscribe();
+  realtimeChannel.subscribe(st=>{_cloud.tempoReale=st});
 }
 
 // Polling di sicurezza (60s): copre eventuali eventi realtime persi
@@ -330,7 +386,7 @@ function doLogin(user){
   document.getElementById('app-main').style.display='block';
   startRealtimeSubscription();
   startPolling();
-  renderHeader();setView('timesheet');
+  renderHeader();cloudDisegnaStato();setView('timesheet');
   qrApplyPending();
 }
 
@@ -338,7 +394,7 @@ async function logout(){
   try{await supa.auth.signOut()}catch(e){console.error(e)}
   if(realtimeChannel){supa.removeChannel(realtimeChannel);realtimeChannel=null}
   if(pollTimer){clearInterval(pollTimer);pollTimer=null}
-  currentUser=null;currentEmail=null;db=null;
+  currentUser=null;currentEmail=null;db=null;cloudDisegnaStato();
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-header').style.display='none';
   document.getElementById('app-main').style.display='none';
@@ -1338,15 +1394,13 @@ function polarToCartesian(cx,cy,r,deg){
 // ═══ BACKUP (solo export: i backup veri sono quelli automatici di Supabase) ═══
 function renderBackupTab(){
   const el=document.getElementById('mgmt-content');
-  el.innerHTML=`<div class="mgmt-panel" style="max-width:800px">
-    <h3 style="margin:0 0 12px;color:var(--accent)">${ico('save','tinted pill')} Backup</h3>
-    <p style="color:var(--text-dim);font-size:14px;margin:0 0 16px">
-      I dati sono protetti dai <b>backup automatici di Supabase</b> (Dashboard → Database → Backups).
-      Da qui puoi scaricare un export JSON dei dati visibili al tuo account, da conservare come copia periodica.
-    </p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap">
-      <button class="add-btn-sm" onclick="exportJSON()">⬇ Esporta JSON</button>
-    </div>
+  const c=supaConfig();
+  el.innerHTML=`<div class="mgmt-panel">${mgmtHead('save','Backup')}
+    <p class="mgmt-hint">I dati sono protetti dai <b>backup automatici di Supabase</b> (Dashboard → Database → Backups). Da qui puoi scaricare un export JSON dei dati visibili al tuo account, da conservare come copia periodica.</p>
+    <div class="mgmt-form"><button class="add-btn-sm" onclick="exportJSON()">${ico('download')} Esporta JSON</button></div>
+  </div>
+  <div class="mgmt-panel">${mgmtHead('cloud','Archivio condiviso',`<button class="btn-outline" onclick="cloudPannello()">${ico('cloud','tinted')} Apri la scheda</button>`)}
+    <p class="mgmt-hint" style="margin:0">Le ore stanno su Supabase, con accesso autenticato e permessi per ruolo: ogni modifica arriva subito ai colleghi. ${c?`Questo dispositivo è collegato a <b>${esc(supaHost(c.url))}</b>.`:''} La nuvola in alto mostra lo stato del collegamento: verde quando è tutto allineato.</p>
   </div>`;
 }
 
@@ -1357,7 +1411,7 @@ function renderGuideTab(){
   if(!_a())return;
   const el=document.getElementById('mgmt-content');
   el.innerHTML=`<div class="mgmt-panel guide">
-    <h3 style="margin:0 0 6px;color:var(--accent)">${ico('book','tinted pill')} Guida all'uso e alla configurazione</h3>
+    ${mgmtHead('book','Guida all\'uso e alla configurazione')}
     <p class="guide-intro">Manuale completo di TimeTrack riservato agli amministratori. Clicca su una sezione per aprirla.</p>
 
     <details open>
@@ -1538,7 +1592,7 @@ function renderGuideTab(){
         <ul>
           <li>I dati vivono su <b>Supabase</b> (Postgres) con backup automatici lato server (Dashboard → Database → Backups).</li>
           <li>Da <b>Gestione → Backup → ⬇ Esporta JSON</b> puoi scaricare periodicamente una copia locale dei dati.</li>
-          <li>L'app riceve le modifiche degli altri utenti <b>in tempo reale</b>; un controllo di sicurezza ogni 60 secondi copre eventuali eventi persi. L'indicatore in alto mostra lo stato: ${ico('check','tinted')} Sincronizzato, ⟳ in corso, ${ico('close','tinted')} errore, ○ offline.</li>
+          <li>L'app riceve le modifiche degli altri utenti <b>in tempo reale</b>; un controllo di sicurezza ogni 60 secondi copre eventuali eventi persi. La <b>nuvola</b> in alto, accanto all'orologio, mostra lo stato dell'archivio condiviso: verde quando è tutto allineato, blu durante la sincronizzazione, rossa con la scritta «Errore di sincronizzazione», grigia «Senza rete». Un clic apre la scheda dell'archivio (progetto, account, ultimo aggiornamento, «Sincronizza ora»; per l'admin anche il link di collegamento).</li>
           <li>Il login usa <b>Supabase Auth</b> (email + password verificate dal server, minimo 8 caratteri); la sessione si rinnova da sola.</li>
           <li>La chiave presente nel sorgente dell'app (publishable key) è <b>pubblica per progettazione</b>: senza login non dà accesso a nulla, sono le policy RLS a decidere chi vede cosa.</li>
         </ul>
@@ -1747,32 +1801,131 @@ function openProjectDetail(id){
 window.openProjectDetail=openProjectDetail;
 
 // ═══ MANAGE ═══
+// Dalla 5.2.0 le schede stanno in una colonna a sinistra, raccolte per
+// argomento, come in Bomtrack: in riga erano otto pulsanti dello stesso peso
+// che andavano a capo e non dicevano quale stava con quale. Una scheda è
+// sempre aperta (prima un secondo clic la chiudeva e lasciava la pagina vuota).
+const MGMT_TABS=[
+  {id:'client',gruppo:'Anagrafiche',label:ico('users','tinted')+' Clienti'},
+  {id:'project',gruppo:'Anagrafiche',label:ico('clipboard','tinted')+' Commesse'},
+  {id:'templates',gruppo:'Anagrafiche',label:ico('layers','tinted')+' Modelli'},
+  {id:'user',gruppo:'Persone e costi',label:ico('user','tinted')+' Utenti'},
+  {id:'rates',gruppo:'Persone e costi',label:ico('euro','tinted')+' Tariffe'},
+  {id:'log',gruppo:'Dati',label:ico('history','tinted')+' Registro'},
+  {id:'backup',gruppo:'Dati',label:ico('save','tinted')+' Backup'},
+  {id:'guide',gruppo:'Aiuto',label:ico('book','tinted')+' Guida'},
+];
 function renderManage(){
-  document.getElementById('mgmt-tabs').innerHTML=[{id:'client',l:'Clienti'},{id:'project',l:'Commesse'},{id:'user',l:'Utenti'},{id:'rates',l:`${ico('euro','tinted')} Tariffe`},{id:'templates',l:`${ico('layers','tinted')} Modelli`},{id:'log',l:`${ico('history','tinted')} Registro`},{id:'backup',l:`${ico('save','tinted')} Backup`},{id:'guide',l:`${ico('book','tinted')} Guida`}].map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="toggleMgmt('${t.id}')">${t.l}</button>`).join('');
+  if(!MGMT_TABS.some(t=>t.id===activeMgmt))activeMgmt='project';
+  const gruppi=[];
+  MGMT_TABS.forEach(t=>{const g=gruppi[gruppi.length-1];if(g&&g.nome===t.gruppo)g.schede.push(t);else gruppi.push({nome:t.gruppo,schede:[t]})});
+  document.getElementById('mgmt-tabs').innerHTML=gruppi.map(g=>`<div class="mgmt-group"><div class="mgmt-group-title">${esc(g.nome)}</div>${g.schede.map(t=>`<button class="mgmt-tab ${activeMgmt===t.id?'active':''}" onclick="setMgmtTab('${t.id}')" aria-current="${activeMgmt===t.id?'page':'false'}">${t.label}</button>`).join('')}</div>`).join('');
   renderMC();
+  mgmtTabInVista();
 }
-function toggleMgmt(id){activeMgmt=activeMgmt===id?null:id;mgmtProjectFilter={clientId:'',search:''};if(activeMgmt==='log')auditState.rows=null;renderManage()}
+// La scheda aperta si vede sempre: al telefono la colonna diventa una riga che
+// scorre di lato, e la scheda scelta poteva restare oltre il bordo.
+function mgmtTabInVista(){
+  const nav=document.getElementById('mgmt-tabs');
+  const att=nav&&nav.querySelector('.mgmt-tab.active');
+  if(!att)return;
+  const n=nav.getBoundingClientRect(),a=att.getBoundingClientRect();
+  if(a.left<n.left||a.right>n.right)nav.scrollLeft+=a.left-n.left-16;
+}
+function setMgmtTab(id){
+  if(activeMgmt!==id){mgmtProjectFilter={clientId:'',search:''};if(id==='log')auditState.rows=null}
+  activeMgmt=id;renderManage();
+}
+// Nome storico, chiamato ancora da link e abitudini: ora apre e basta
+function toggleMgmt(id){setMgmtTab(id)}
+// Intestazione di ogni scheda: titolo e, a destra, i comandi della scheda
+function mgmtHead(icon,title,actions){
+  return`<div class="mgmt-head"><h3 class="mgmt-title">${ico(icon,'tinted pill')} ${title}</h3>${actions?`<div class="mgmt-head-actions">${actions}</div>`:''}</div>`;
+}
+// Etichette di stato: lo stesso badge a contorno di Bomtrack
+const PROJ_STATUS={active:{l:'Attivo',c:'st-attivo'},completed:{l:'Completato',c:'st-completato'},suspended:{l:'Sospeso',c:'st-sospeso'}};
+function statusBadge(label,cls){return`<span class="doc-badge ${cls}">${esc(label)}</span>`}
 function _mgmtFilteredProjects(){
   return db.projects.filter(p=>{const cl=db.clients.find(c=>c.id===p.clientId);const mc=!mgmtProjectFilter.clientId||p.clientId===mgmtProjectFilter.clientId;const s=mgmtProjectFilter.search;const ms=!s||(p.code||'').toLowerCase().includes(s)||p.name.toLowerCase().includes(s)||(cl?.name||'').toLowerCase().includes(s);return mc&&ms;});
 }
 function _mgmtProjRow(p){
   const cl=db.clients.find(c=>c.id===p.clientId);
-  return`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(p.code||'—')} - ${esc(p.name)}</span><span class="mgmt-item-meta">${esc(cl?.name||'?')}</span><span class="mgmt-item-meta">Ref: ${esc(p.referente||'—')}</span><span class="mgmt-item-meta">€${p.budget||0}</span><span class="mgmt-item-meta">${p.budgetHours||0}h</span><span class="mgmt-item-meta">${ico('clock','tinted')} ${fmtDate(p.deadline)}</span><span class="status-badge" style="background:${p.status==='active'?'var(--green-soft)':p.status==='completed'?'var(--accent-soft-hi)':'var(--orange-soft)'};color:${p.status==='active'?'var(--green)':p.status==='completed'?'var(--accent)':'var(--orange)'}"}>${p.status==='active'?'Attivo':p.status==='completed'?'Completato':'Sospeso'}</span>${(p.assignedUsers&&p.assignedUsers.length>0)?`<span style="display:flex;align-items:center;gap:4px;margin-left:4px">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span title="${esc(u.name)}" style="width:20px;height:20px;border-radius:50%;background:${safeColor(u.color)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`:`<span class="mgmt-item-meta" style="font-size:11px;color:var(--text-dim)">Tutti</span>`}<div class="mgmt-item-actions"><button class="mini-btn" data-action="set-status-active" data-id="${p.id}" style="${p.status==='active'?'background:var(--green-soft);color:var(--green);border-color:var(--green)':''}" title="Imposta Attivo">● Attivo</button><button class="mini-btn" data-action="set-status-completed" data-id="${p.id}" style="${p.status==='completed'?'background:var(--accent-soft-hi);color:var(--accent);border-color:var(--accent)':''}" title="Imposta Completato">${ico('check')} Completato</button><button class="mini-btn" data-action="set-status-suspended" data-id="${p.id}" style="${p.status==='suspended'?'background:var(--orange-soft);color:var(--orange);border-color:var(--orange)':''}" title="Imposta Sospeso">${ico('pause')} Sospeso</button><button class="mini-btn" data-action="qr-project" data-id="${p.id}" title="Codice QR ed etichette">${ico('qr','tinted')}</button><button class="mini-btn" data-action="edit-project" data-id="${p.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-project" data-id="${p.id}">${ico('trash','tinted')}</button></div></div>${p.note?`<div class="mgmt-item-note" title="${esc(p.note)}">${noteHtml(p.note)}</div>`:''}<div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}${a.note?`<span class="sub-item-note" title="${esc(a.note)}">${esc(a.note)}</span>`:''}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}">${ico('trash','tinted')}</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')">+</button></div></div></div>`;
+  const st=PROJ_STATUS[p.status]||PROJ_STATUS.active;
+  const meta=[esc(cl?.name||'?'),'Ref: '+esc(p.referente||'—'),'€'+(p.budget||0),(p.budgetHours||0)+'h',`${ico('clock','tinted')} ${fmtDate(p.deadline)}`].join(' · ');
+  const team=(p.assignedUsers&&p.assignedUsers.length>0)
+    ?`<span class="mgmt-avatars">${p.assignedUsers.map(uid=>{const u=db.users.find(x=>x.id===uid);return u?`<span class="mgmt-avatar" title="${esc(u.name)}" style="background:${safeColor(u.color)}">${esc(u.name.charAt(0).toUpperCase())}</span>`:''}).join('')}</span>`
+    :`<span class="mgmt-item-meta" title="Nessun utente assegnato: la vedono tutti">Tutti</span>`;
+  const stBtn=(k,icon)=>`<button class="seg-btn ${p.status===k?'on '+PROJ_STATUS[k].c:''}" data-action="set-status-${k}" data-id="${p.id}" title="Imposta ${PROJ_STATUS[k].l}" aria-pressed="${p.status===k}">${ico(icon)}<span class="seg-l">${PROJ_STATUS[k].l}</span></button>`;
+  return`<div class="mgmt-item mgmt-item-stack">
+    <div class="mgmt-item-row">
+      <span class="mgmt-item-name"><span class="mgmt-code">${esc(p.code||'—')}</span> ${esc(p.name)}</span>
+      ${statusBadge(st.l,st.c)}${team}
+      <div class="mgmt-item-actions">
+        <span class="seg" role="group" aria-label="Stato della commessa">${stBtn('active','dot')}${stBtn('completed','check')}${stBtn('suspended','pause')}</span>
+        <button class="mini-btn" data-action="qr-project" data-id="${p.id}" title="Codice QR ed etichette">${ico('qr','tinted')}</button>
+        <button class="mini-btn" data-action="edit-project" data-id="${p.id}" title="Modifica">${ico('edit','tinted')}</button>
+        <button class="mini-btn danger" data-action="delete-project" data-id="${p.id}" title="Elimina">${ico('trash','tinted')}</button>
+      </div>
+    </div>
+    <div class="mgmt-item-meta">${meta}</div>
+    ${p.note?`<div class="mgmt-item-note" title="${esc(p.note)}">${noteHtml(p.note)}</div>`:''}
+    <div class="sub-list"><div class="sub-list-title">Attività della commessa</div>${(p.activities||[]).map(a=>`<div class="sub-item"><span class="sub-item-name">${esc(a.name)}${a.note?`<span class="sub-item-note" title="${esc(a.note)}">${esc(a.note)}</span>`:''}</span><button class="mini-btn" data-action="edit-activity" data-pid="${p.id}" data-aid="${a.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-activity" data-pid="${p.id}" data-aid="${a.id}" title="Elimina">${ico('trash','tinted')}</button></div>`).join('')}<div class="sub-add"><input id="sa-${p.id}" placeholder="Nuova attività" onkeydown="if(event.key==='Enter')addAct('${p.id}')"><button class="add-btn-sm" onclick="addAct('${p.id}')" title="Aggiungi attività">+</button></div></div>
+  </div>`;
 }
+const MGMT_EMPTY_PROJ='<div class="empty-text">Nessuna commessa trovata</div>';
 function filterMgmtProjects(){
   mgmtProjectFilter.clientId=document.getElementById('mpf-client').value;
   mgmtProjectFilter.search=document.getElementById('mpf-search').value.toLowerCase();
   const listEl=document.getElementById('mpf-list');if(!listEl)return;
-  listEl.innerHTML=_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>';
+  const list=_mgmtFilteredProjects();
+  listEl.innerHTML=list.map(_mgmtProjRow).join('')||MGMT_EMPTY_PROJ;
+  const n=document.getElementById('mpf-count');if(n)n.textContent=mgmtCount(list.length,db.projects.length);
 }
+function mgmtCount(n,tot){return n===tot?`${tot} ${tot===1?'commessa':'commesse'}`:`${n} di ${tot}`}
 function renderMC(){
   const el=document.getElementById('mgmt-content');if(!activeMgmt){el.innerHTML='';return}
   if(activeMgmt==='client'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.clients.map(c=>`<div class="mgmt-item"><span class="mgmt-item-name">${esc(c.name)}</span><span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}</span>${c.email?`<span class="mgmt-item-meta">${esc(c.email)}</span>`:''}<span class="status-badge" style="background:${c.active?'var(--green-soft)':'var(--hairline)'};color:${c.active?'var(--green)':'var(--text-dim)'}">${c.active?'Attivo':'Inattivo'}</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}">${ico('trash','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div></div>`;
+    const list=db.clients.map(c=>`<div class="mgmt-item">
+      <span class="mgmt-item-name">${esc(c.name)}</span>
+      <span class="mgmt-item-meta">Ref: ${esc(c.referente||'—')}${c.email?' · '+esc(c.email):''}</span>
+      ${c.active?statusBadge('Attivo','st-attivo'):statusBadge('Inattivo','st-inattivo')}
+      <div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-client" data-id="${c.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-client" data-id="${c.id}" title="Elimina">${ico('trash','tinted')}</button></div>
+    </div>`).join('')||'<div class="empty-text">Nessun cliente</div>';
+    el.innerHTML=`<div class="mgmt-panel">${mgmtHead('users','Clienti',`<span class="mgmt-count">${db.clients.length} ${db.clients.length===1?'cliente':'clienti'}</span>`)}
+      <div class="mgmt-list">${list}</div>
+      <h4 class="settings-group-title">${ico('plus','tinted')} Nuovo cliente</h4>
+      <div class="mgmt-form"><input id="mc-name" placeholder="Nome cliente"><input id="mc-ref" placeholder="Referente"><input id="mc-email" type="email" placeholder="Email"><button class="add-btn-sm" onclick="addClient()">+ Aggiungi</button></div>
+    </div>`;
   } else if(activeMgmt==='project'){
-    el.innerHTML=`<div class="mgmt-panel"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><select id="mpf-client" onchange="filterMgmtProjects()" style="flex:1;min-width:140px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id="mpf-search" placeholder="Cerca per codice, nome, cliente..." value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()" style="flex:2;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none"><button class="btn-outline" onclick="qrLabelsFiltered()" title="PDF con un'etichetta QR per ogni commessa attiva elencata">${ico('qr','tinted')} Etichette QR</button></div><div id="mpf-list" class="mgmt-list">${_mgmtFilteredProjects().map(_mgmtProjRow).join('')||'<div style="color:var(--text-dim);padding:16px 0;text-align:center;font-size:13px">Nessuna commessa trovata</div>'}</div><div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea>${db.templates.length?`<select id="mp-template" title="Le attività del modello si aggiungono alla commessa"><option value="">— Attività da modello (facoltativo) —</option>${db.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.activities.length})</option>`).join('')}</select>`:''}<button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div></div>`;
+    const list=_mgmtFilteredProjects();
+    el.innerHTML=`<div class="mgmt-panel">${mgmtHead('clipboard','Commesse',`<button class="btn-outline" onclick="qrLabelsFiltered()" title="PDF con un'etichetta QR per ogni commessa attiva elencata">${ico('qr','tinted')} Etichette QR</button>`)}
+      <div class="mgmt-filters">
+        <input id="mpf-search" class="mgmt-search" placeholder="Cerca per codice, nome, cliente…" value="${esc(mgmtProjectFilter.search)}" oninput="filterMgmtProjects()">
+        <select id="mpf-client" onchange="filterMgmtProjects()"><option value="">— Tutti i clienti —</option>${db.clients.map(c=>`<option value="${c.id}" ${mgmtProjectFilter.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+        <span class="mgmt-count" id="mpf-count">${mgmtCount(list.length,db.projects.length)}</span>
+      </div>
+      <div id="mpf-list" class="mgmt-list">${list.map(_mgmtProjRow).join('')||MGMT_EMPTY_PROJ}</div>
+      <h4 class="settings-group-title">${ico('plus','tinted')} Nuova commessa</h4>
+      <div class="mgmt-form"><select id="mp-client"><option value="">— Cliente —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input id="mp-name" placeholder="Nome commessa"><input id="mp-ref" placeholder="Referente"><input id="mp-budget" type="number" placeholder="Budget €"><input id="mp-hours" type="number" placeholder="Budget ore"><input id="mp-deadline" type="date" title="Data fine lavori"><textarea id="mp-note" rows="2" placeholder="Note (facoltative)"></textarea>${db.templates.length?`<select id="mp-template" title="Le attività del modello si aggiungono alla commessa"><option value="">— Attività da modello (facoltativo) —</option>${db.templates.map(t=>`<option value="${t.id}">${esc(t.name)} (${t.activities.length})</option>`).join('')}</select>`:''}<button class="add-btn-sm" onclick="addProject()">+ Aggiungi</button></div>
+    </div>`;
   } else if(activeMgmt==='user'){
-    el.innerHTML=`<div class="mgmt-panel"><div class="mgmt-list">${db.users.map(u=>`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}"><span class="mgmt-item-name">${esc(u.name)}</span><span class="mgmt-item-meta">@${esc(u.username||'—')}</span>${u.email?`<span class="mgmt-item-meta">${esc(u.email)}</span>`:''}<span class="mgmt-item-meta">${esc(u.role)}</span><span class="status-badge" style="background:${u.active!==false?'var(--green-soft)':'var(--hairline)'};color:${u.active!==false?'var(--green)':'var(--text-dim)'}">${u.active!==false?'Attivo':'Sospeso'}</span><div class="mgmt-item-actions">${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${u.active===false?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${u.active===false?'Riattiva utente':'Sospendi utente'}">${u.active===false?`${ico('check')} Riattiva`:`${ico('pause')} Sospendi`}</button>`:''}<button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">${ico('key','tinted')}</button></div></div>`).join('')}</div><div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button> <button class="btn-outline" onclick="showConnectionLinkModal()">${ico('link','tinted')} Link di collegamento</button></div></div>`;
+    const list=db.users.map(u=>{
+      const susp=u.active===false;
+      return`<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}">
+      <span class="mgmt-item-name">${esc(u.name)}${u.id===currentUser.id?' <span class="mgmt-item-meta">(tu)</span>':''}</span>
+      <span class="mgmt-item-meta">${esc(u.email||'—')}${u.username?' · @'+esc(u.username):''}</span>
+      ${statusBadge(u.role==='admin'?'Admin':'Operatore','st-ruolo')}
+      ${susp?statusBadge('Sospeso','st-sospeso'):statusBadge('Attivo','st-attivo')}
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" data-action="edit-user" data-id="${u.id}" title="Modifica">${ico('edit','tinted')}</button>
+        <button class="mini-btn" data-action="reset-pwd" data-id="${u.id}" title="Genera link reimpostazione password">${ico('key','tinted')}</button>
+        ${u.role!=='admin'&&u.id!==currentUser.id?`<button class="mini-btn${susp?'':' danger'}" data-action="toggle-user-active" data-id="${u.id}" title="${susp?'Riattiva utente':'Sospendi utente'}">${susp?`${ico('check')} Riattiva`:`${ico('pause')} Sospendi`}</button>`:''}
+      </div></div>`}).join('');
+    el.innerHTML=`<div class="mgmt-panel">${mgmtHead('user','Utenti e accesso',`<button class="btn-outline" onclick="showConnectionLinkModal()">${ico('link','tinted')} Link di collegamento</button>`)}
+      <div class="mgmt-list">${list}</div>
+      <div class="mgmt-form"><button class="add-btn-sm" onclick="addUser()">+ Nuovo utente (invito)</button></div>
+      <p class="mgmt-hint" style="margin:10px 0 0">${ico('key','tinted')} La chiave genera un link per reimpostare la password. Per togliere un collega, sospendilo: le sue ore restano.</p>
+    </div>`;
   } else if(activeMgmt==='rates'){
     renderRatesTab();
   } else if(activeMgmt==='backup'){
@@ -1798,11 +1951,12 @@ function tplActsFromText(txt,old=[]){
 }
 function renderTemplatesTab(){
   const el=document.getElementById('mgmt-content');
-  if(!db.templatesAvailable){el.innerHTML=`<div class="mgmt-panel"><p class="empty-text">Database da aggiornare: riesegui <code>supabase/schema.sql</code> per usare i modelli.</p></div>`;return}
+  if(!db.templatesAvailable){el.innerHTML=`<div class="mgmt-panel">${mgmtHead('layers','Modelli di commessa')}<p class="empty-text">Database da aggiornare: riesegui <code>supabase/schema.sql</code> per usare i modelli.</p></div>`;return}
   const withActs=db.projects.filter(p=>p.activities?.length);
-  el.innerHTML=`<div class="mgmt-panel">
+  el.innerHTML=`<div class="mgmt-panel">${mgmtHead('layers','Modelli di commessa',`<span class="mgmt-count">${db.templates.length} ${db.templates.length===1?'modello':'modelli'}</span>`)}
     <p class="mgmt-hint">Un modello è un elenco di attività. Quando crei una commessa in <b>Commesse</b> puoi sceglierne uno: la commessa nasce già con quelle attività.</p>
-    <div class="mgmt-list">${db.templates.map(t=>`<div class="mgmt-item" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="mgmt-item-name">${esc(t.name)}</span><span class="mgmt-item-meta">${t.activities.length} attività</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-template" data-id="${t.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-template" data-id="${t.id}" title="Elimina">${ico('trash','tinted')}</button></div></div><div class="tpl-acts">${t.activities.map(a=>`<span class="proj-act-tag"${a.note?` title="${esc(a.note)}"`:''}>${esc(a.name)}</span>`).join('')||'<span class="empty-text">Nessuna attività</span>'}</div></div>`).join('')||'<p class="empty-text">Nessun modello</p>'}</div>
+    <div class="mgmt-list">${db.templates.map(t=>`<div class="mgmt-item mgmt-item-stack"><div class="mgmt-item-row"><span class="mgmt-item-name">${esc(t.name)}</span><span class="mgmt-item-meta">${t.activities.length} attività</span><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-template" data-id="${t.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-template" data-id="${t.id}" title="Elimina">${ico('trash','tinted')}</button></div></div><div class="tpl-acts">${t.activities.map(a=>`<span class="proj-act-tag"${a.note?` title="${esc(a.note)}"`:''}>${esc(a.name)}</span>`).join('')||'<span class="empty-text">Nessuna attività</span>'}</div></div>`).join('')||'<p class="empty-text">Nessun modello</p>'}</div>
+    <h4 class="settings-group-title">${ico('plus','tinted')} Nuovo modello</h4>
     <div class="mgmt-form"><input id="tpl-name" placeholder="Nome modello"><textarea id="tpl-acts" rows="3" placeholder="Attività, una per riga"></textarea><button class="add-btn-sm" onclick="addTemplate()">+ Crea modello</button></div>
     ${withActs.length?`<div class="mgmt-form"><select id="tpl-from"><option value="">— Copia le attività di una commessa —</option>${withActs.map(p=>`<option value="${p.id}">${esc(p.code||'—')} - ${esc(p.name)} (${p.activities.length})</option>`).join('')}</select><button class="btn-outline" onclick="templateFromProject()">${ico('copy','tinted')} Crea modello dalla commessa</button></div>`:''}
   </div>`;
@@ -1912,15 +2066,13 @@ function renderAuditTab(){
   if(auditState.rows===null&&!auditState.loading){loadAudit(false)}
   const rows=auditState.rows||[];
   const actL={insert:'Creato',update:'Modificato',delete:'Eliminato'};
-  const sel='style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"';
-  el.innerHTML=`<div class="mgmt-panel">
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-      <select id="al-table" onchange="auditFilter()" ${sel}><option value="">Tutto</option>${Object.entries(AUDIT_TABLES).map(([k,l])=>`<option value="${k}" ${auditState.table===k?'selected':''}>${l}</option>`).join('')}</select>
-      <select id="al-actor" onchange="auditFilter()" ${sel}><option value="">Tutti gli utenti</option>${db.users.map(u=>`<option value="${u.id}" ${auditState.actor===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
-      <button class="btn-outline" onclick="auditState.rows=null;renderAuditTab()">${ico('refresh','tinted')} Aggiorna</button>
+  el.innerHTML=`<div class="mgmt-panel">${mgmtHead('history','Registro delle modifiche',`<button class="btn-outline" onclick="auditState.rows=null;renderAuditTab()">${ico('refresh','tinted')} Aggiorna</button>`)}
+    <div class="mgmt-filters">
+      <select id="al-table" onchange="auditFilter()"><option value="">Tutto</option>${Object.entries(AUDIT_TABLES).map(([k,l])=>`<option value="${k}" ${auditState.table===k?'selected':''}>${l}</option>`).join('')}</select>
+      <select id="al-actor" onchange="auditFilter()"><option value="">Tutti gli utenti</option>${db.users.map(u=>`<option value="${u.id}" ${auditState.actor===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
     </div>
     ${auditState.error?`<p class="empty-text">${esc(auditState.error)}</p>`:''}
-    ${auditState.rows===null||auditState.loading&&!rows.length?'<p class="empty-text">Caricamento…</p>':rows.length?`<div class="table-wrap"><table class="audit-table"><thead><tr><th>Quando</th><th>Chi</th><th>Cosa</th><th>Dettaglio</th></tr></thead><tbody>${rows.map(r=>{const u=db.users.find(x=>x.id===r.actor);return`<tr><td class="al-when">${new Date(r.at).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${u?`<span class="user-tag" style="background:${safeColor(u.color)}22;color:${safeColor(u.color)}">${esc(u.name)}</span>`:`<span class="mgmt-item-meta">${r.actor?'(utente eliminato)':'Sistema'}</span>`}</td><td><span class="al-act al-${r.action}">${actL[r.action]||r.action}</span> ${AUDIT_TABLES[r.table_name]||esc(r.table_name)}</td><td><div>${auditSubject(r)}</div><div class="al-chgs">${auditChanges(r)}</div></td></tr>`}).join('')}</tbody></table></div>${auditState.more?`<div style="text-align:center;margin-top:12px"><button class="btn-outline" onclick="loadAudit(true)">Carica altri</button></div>`:''}`:auditState.error?'':'<p class="empty-text">Nessuna modifica registrata</p>'}
+    ${auditState.rows===null||auditState.loading&&!rows.length?'<p class="empty-text">Caricamento…</p>':rows.length?`<div class="table-wrap"><table class="audit-table"><thead><tr><th>Quando</th><th>Chi</th><th>Cosa</th><th>Dettaglio</th></tr></thead><tbody>${rows.map(r=>{const u=db.users.find(x=>x.id===r.actor);return`<tr><td class="al-when">${new Date(r.at).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${u?`<span class="user-tag" style="background:${safeColor(u.color)}22;color:${safeColor(u.color)}">${esc(u.name)}</span>`:`<span class="mgmt-item-meta">${r.actor?'(utente eliminato)':'Sistema'}</span>`}</td><td><span class="al-act al-${r.action}">${actL[r.action]||r.action}</span> ${AUDIT_TABLES[r.table_name]||esc(r.table_name)}</td><td><div>${auditSubject(r)}</div><div class="al-chgs">${auditChanges(r)}</div></td></tr>`}).join('')}</tbody></table></div>${auditState.more?`<div class="mgmt-more"><button class="btn-outline" onclick="loadAudit(true)">Carica altri</button></div>`:''}`:auditState.error?'':'<p class="empty-text">Nessuna modifica registrata</p>'}
     <p class="mgmt-hint" style="margin-top:12px">Il registro parte dalla versione 5.0.0: le modifiche precedenti non ci sono. «Sistema» indica modifiche fatte dal Dashboard di Supabase o dagli script.</p>
   </div>`;
 }
@@ -1934,30 +2086,26 @@ function renderRatesTab(){
   const uName=id=>id?esc(db.users.find(u=>u.id===id)?.name||'?'):'(tutti)';
   const cName=id=>id?esc(db.clients.find(c=>c.id===id)?.name||'?'):'(tutti)';
   const pName=id=>id?esc(db.projects.find(p=>p.id===id)?.name||'?'):'(tutte)';
-  const rowHTML=r=>`<div class="mgmt-item" style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto auto;gap:8px;align-items:center">
-    <span class="mgmt-item-meta">${uName(r.userId)}</span>
-    <span class="mgmt-item-meta">${cName(r.clientId)}</span>
-    <span class="mgmt-item-meta">${pName(r.projectId)}</span>
-    <span class="mgmt-item-meta">${r.costRate!=null?'€'+r.costRate+'/h':'—'}</span>
-    <span class="mgmt-item-meta">${r.clientRate!=null?'€'+r.clientRate+'/h':'—'}</span>
-    <span class="mgmt-item-meta" style="font-size:11px">dal ${r.from}${r.to?' al '+r.to:''}</span>
-    <div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-rate" data-id="${r.id}">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-rate" data-id="${r.id}">${ico('trash','tinted')}</button></div>
-  </div>`;
-  el.innerHTML=`<div class="mgmt-panel">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto auto;gap:8px;padding:4px 0 8px;font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase">
-      <span>Utente</span><span>Cliente</span><span>Commessa</span><span>Costo</span><span>Ricavo</span><span>Validità</span>
-    </div>
-    <div class="mgmt-list">${active.map(rowHTML).join('')||'<div style="color:var(--text-dim);padding:12px 0">Nessuna tariffa attiva</div>'}</div>
-    ${history.length?`<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Storico (${history.length})</summary><div class="mgmt-list" style="margin-top:8px;opacity:.7">${history.map(rowHTML).join('')}</div></details>`:''}
-    <div style="margin-top:12px"><button class="mini-btn" onclick="recalcAllRates()" title="Ricalcola i costi/ricavi di tutte le registrazioni in base alle tariffe attuali">↻ Ricalcola tutte le tariffe</button></div>
-    <div class="mgmt-form" style="margin-top:16px">
+  const rowHTML=r=>`<tr>
+    <td>${uName(r.userId)}</td><td>${cName(r.clientId)}</td><td>${pName(r.projectId)}</td>
+    <td class="num">${r.costRate!=null?'€'+r.costRate+'/h':'—'}</td>
+    <td class="num">${r.clientRate!=null?'€'+r.clientRate+'/h':'—'}</td>
+    <td class="al-when">dal ${fmtDate(r.from)}${r.to?' al '+fmtDate(r.to):''}</td>
+    <td><div class="mgmt-item-actions"><button class="mini-btn" data-action="edit-rate" data-id="${r.id}" title="Modifica">${ico('edit','tinted')}</button><button class="mini-btn danger" data-action="delete-rate" data-id="${r.id}" title="Elimina">${ico('trash','tinted')}</button></div></td>
+  </tr>`;
+  const table=rows=>`<div class="table-wrap"><table class="rates-table"><thead><tr><th>Utente</th><th>Cliente</th><th>Commessa</th><th class="num">Costo</th><th class="num">Ricavo</th><th>Validità</th><th></th></tr></thead><tbody>${rows.map(rowHTML).join('')}</tbody></table></div>`;
+  el.innerHTML=`<div class="mgmt-panel">${mgmtHead('euro','Tariffe',`<button class="btn-outline" onclick="recalcAllRates()" title="Ricalcola i costi/ricavi di tutte le registrazioni in base alle tariffe attuali">${ico('refresh','tinted')} Ricalcola tutte le tariffe</button>`)}
+    ${active.length?table(active):'<div class="empty-text">Nessuna tariffa attiva</div>'}
+    ${history.length?`<details class="rates-history"><summary>Storico (${history.length})</summary>${table(history)}</details>`:''}
+    <h4 class="settings-group-title">${ico('plus','tinted')} Nuova tariffa</h4>
+    <div class="mgmt-form">
       <select id="nr-user"><option value="">— Utente (tutti) —</option>${db.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
       <select id="nr-client"><option value="">— Cliente (tutti) —</option>${db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <select id="nr-project"><option value="">— Commessa (tutte) —</option>${db.projects.map(p=>`<option value="${p.id}">${esc(p.code)} ${esc(p.name)}</option>`).join('')}</select>
       <input id="nr-cost" type="number" step="0.5" placeholder="Costo €/h (vuoto=non impostato)">
       <input id="nr-rev" type="number" step="0.5" placeholder="Ricavo €/h (vuoto=non impostato)">
-      <input id="nr-from" type="date" placeholder="Valida dal" title="Valida dal">
-      <input id="nr-to" type="date" placeholder="Valida fino al (vuoto=attiva)" title="Valida fino al">
+      <label class="mgmt-inline">Dal <input id="nr-from" type="date" title="Valida dal"></label>
+      <label class="mgmt-inline">Al <input id="nr-to" type="date" title="Valida fino al (vuoto = attiva)"></label>
       <button class="add-btn-sm" onclick="addRate()">+ Aggiungi Tariffa</button>
     </div>
   </div>`;
@@ -2521,6 +2669,9 @@ window.closePwdModal=closePwdModal;
 window.resetUserPassword=resetUserPassword;
 window.setView=setView;
 window.toggleMgmt=toggleMgmt;
+window.setMgmtTab=setMgmtTab;
+window.cloudPannello=cloudPannello;
+window.cloudSincronizza=cloudSincronizza;
 window.renderQH=renderQH;
 window.filterProjects=filterProjects;
 window.filterMgmtProjects=filterMgmtProjects;
