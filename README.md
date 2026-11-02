@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 5.2.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.3.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,15 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.3.0] — 2026-11-02
+
+Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pubblicano `app.js`, `index.html` e `style.css`.
+
+**Modificato**
+- **Inserimento rapido in due zone.** A sinistra, sotto «Commessa», si sceglie su cosa si lavora: commessa, cliente, attività e il codice QR, con una riga che spiega a cosa serve. A destra, sotto «Tempo», si decide quanto: timer in corso, data, orario dalle/alle, ore con i pulsanti 1h…8h accanto, nota e i pulsanti **Registra Ore** e **Avvia timer**. Su tablet e telefono le due zone stanno una sopra l'altra, con la commessa per prima.
+- Il timer in corso si vede ora nella zona «Tempo», sopra i campi delle ore.
+- Al telefono il pannello ha margini più stretti e i pulsanti Registra Ore e Avvia timer occupano tutta la riga.
 
 ### [5.2.0] — 2026-11-02
 

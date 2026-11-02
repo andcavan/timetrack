@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.2.0';
+const APP_VERSION='5.3.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -946,9 +946,12 @@ function qeQrTarget(){
 function renderQeQr(){
   const el=document.getElementById('qe-qr');if(!el)return;
   const t=qeQrTarget();
-  if(!t||!qrAvailable()||!qrBase()){el.style.display='none';el.innerHTML='';el.dataset.link='';return}
+  // La riga accanto al QR spiega a cosa serve; senza codici QR disponibili resta vuota
+  const hint=document.getElementById('qe-qr-hint'),qrOk=qrAvailable()&&!!qrBase();
+  if(!t||!qrOk){el.style.display='none';el.innerHTML='';el.dataset.link='';if(hint)hint.textContent=!t&&qrOk?'Scegli una commessa: qui compare il suo codice QR.':'';return}
   const link=qrProjectLink(t.pr.id,t.a?.id);
   el.style.display='';
+  if(hint)hint.textContent=t.a?'Inquadralo col telefono per registrare su questa attività. Clic per ingrandire.':'Inquadralo col telefono per aprire la commessa. Clic per ingrandire.';
   if(el.dataset.link===link)return;
   el.dataset.link=link;
   el.title=`Codice QR di ${qrProjectLabel(t.pr)}${t.a?' · '+t.a.name:''}: clic per ingrandire`;

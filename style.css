@@ -127,8 +127,7 @@ input,select,button,textarea{font-family:var(--font)}
 
 /* Quick Entry */
 .quick-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
-.quick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:12px}
-.quick-hours{display:flex;gap:6px;margin-bottom:16px}
+.quick-hours{display:flex;gap:6px;flex-wrap:wrap}
 .qh-btn{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 18px;color:var(--text-dim);font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
 .qh-btn:hover,.qh-btn.active{background:var(--accent-soft-hi);border-color:var(--accent);color:var(--accent)}
 .add-btn{background:var(--accent-solid);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
@@ -478,7 +477,6 @@ tr{border-bottom:1px solid var(--hairline)}
 .al-chg{font-size:12px;color:var(--text-dim)}
 .al-chg b{color:var(--text);font-weight:600}
 /* L'orario ha due campi: occupa due colonne della griglia, altrimenti l'ora si taglia */
-@media(min-width:560px){.quick-grid .field-time{grid-column:span 2}}
 .time-pair input[type=time]{padding-left:10px;padding-right:8px;min-width:96px}
 /* Codici QR (5.1.0): sempre nero su bianco, anche col tema scuro, perché i lettori lo chiedono */
 .qr-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px;width:max-content;max-width:100%;margin:14px auto 6px;line-height:0}
@@ -499,3 +497,29 @@ tr{border-bottom:1px solid var(--hairline)}
 .qe-qr{margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:zoom-in;color:var(--text-dim)}
 .qe-qr .qr-box{margin:0;padding:3px;border-radius:6px}
 .qe-qr-label{font-size:10px;max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Inserimento rapido in due zone (5.3.0): a sinistra la commessa, a destra il tempo.
+   Sotto i 860px le zone vanno una sopra l'altra, la commessa prima. */
+.quick-zones{display:grid;grid-template-columns:minmax(260px,5fr) 7fr;gap:0}
+.qz{display:flex;flex-direction:column;gap:12px;min-width:0}
+.qz-commessa{padding-right:24px}
+.qz-tempo{padding-left:24px;border-left:1px solid var(--border)}
+.qz-title{font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:6px;margin:0 0 2px}
+.field-readonly{background:var(--card)!important;cursor:not-allowed}
+.qz-time-grid{display:grid;grid-template-columns:minmax(140px,1fr) minmax(220px,1.4fr);gap:12px}
+.qz-hours-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.qz-hours-row input{width:96px!important;flex:none}
+.qz-qr-slot{display:flex;align-items:center;gap:12px;margin-top:auto;padding-top:4px}
+.qz-qr-slot .qe-qr{margin-left:0}
+.qz-qr-hint{font-size:12px;color:var(--text-dim);margin:0;line-height:1.4}
+.qz-tempo .quick-actions{margin-top:auto;padding-top:4px}
+@media(max-width:860px){
+  .quick-zones{grid-template-columns:1fr}
+  .qz-commessa{padding:0 0 20px}
+  .qz-tempo{padding:20px 0 0;border-left:none;border-top:1px solid var(--border)}
+}
+@media(max-width:560px){
+  .quick-section{padding:16px}
+  .qz-time-grid{grid-template-columns:1fr}
+  .quick-actions .add-btn,.quick-actions .timer-start-btn{flex:1;justify-content:center}
+}
+.qz-qr-slot .qe-qr-label{display:none}
