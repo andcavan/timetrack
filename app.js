@@ -542,7 +542,7 @@ function renderTimesheet(){
   document.getElementById('qe-project').value='';
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
   selectedDay=document.getElementById('qe-date').value;
-  renderQH();renderWeek();renderTimer();
+  renderQH();renderWeek();renderTimer();renderQeQr();
 }
 // Orario «dalle/alle» (prefisso qe = inserimento rapido, me = modifica):
 // con entrambi gli orari le ore si calcolano da sole; scrivere le ore a mano
@@ -568,7 +568,8 @@ function readTimeFields(px){
   if(h==null){showToast('L\'orario di fine deve essere dopo quello di inizio','error');return null}
   return{start:s,end:e,hours:h};
 }
-function onQeProjectChange3(){
+function onQeProjectChange3(){_qeProjectFill();renderQeQr()}
+function _qeProjectFill(){
   const pid=document.getElementById('qe-project').value;
   const clientDisp=document.getElementById('qe-client-display');
   const as=document.getElementById('qe-activity');
@@ -767,7 +768,7 @@ function qrOpen(p){
   document.getElementById('qe-date').value=today;selectedDay=today;selectedWeek=getWeekStart(today);
   selectProject(pr.id,qrProjectLabel(pr));
   if(act)document.getElementById('qe-activity').value=act.id;
-  renderWeek();
+  renderQeQr();renderWeek();
   qrCardModal(pr.id,act?act.id:'',!!p.activityId&&!act);
   return true;
 }
@@ -798,6 +799,7 @@ function qrCardModal(pid,aid,actMissing){
 function qrCardActChange(){
   const s=document.getElementById('qrc-act'),a=document.getElementById('qe-activity');
   if(s&&a&&!a.disabled)a.value=s.value;
+  renderQeQr();
 }
 function qrCardManual(){
   qrCardActChange();closeModal();
@@ -814,6 +816,7 @@ async function qrCardStart(pid){
   // Lo stop ricarica i dati: si ripete la scelta prima di avviare
   selectProject(pr.id,qrProjectLabel(pr));
   document.getElementById('qe-activity').value=aid;
+  renderQeQr();
   await startTimer();
 }
 async function qrCardStop(){
@@ -875,6 +878,34 @@ function qrLabelsFiltered(){
   const ids=_mgmtFilteredProjects().filter(p=>p.status==='active').map(p=>p.id);
   if(!ids.length){showToast('Nessuna commessa attiva fra quelle elencate','error');return}
   qrLabelsPdf(ids,false);
+}
+// Il QR dell'Inserimento Rapido: segue commessa e attività scelte, in basso
+// a destra; un clic lo ingrandisce. Senza commessa non c'è.
+function qeQrTarget(){
+  const pid=document.getElementById('qe-project')?.value,pr=pid&&db?.projects.find(x=>x.id===pid);
+  if(!pr)return null;
+  const aid=document.getElementById('qe-activity')?.value||'';
+  return{pr,a:(pr.activities||[]).find(x=>x.id===aid)||null};
+}
+function renderQeQr(){
+  const el=document.getElementById('qe-qr');if(!el)return;
+  const t=qeQrTarget();
+  if(!t||!qrAvailable()||!qrBase()){el.style.display='none';el.innerHTML='';el.dataset.link='';return}
+  const link=qrProjectLink(t.pr.id,t.a?.id);
+  el.style.display='';
+  if(el.dataset.link===link)return;
+  el.dataset.link=link;
+  el.title=`Codice QR di ${qrProjectLabel(t.pr)}${t.a?' · '+t.a.name:''}: clic per ingrandire`;
+  el.innerHTML=`<div class="qr-box">${qrSvg(link,76)}</div><span class="qe-qr-label">${t.a?esc(t.a.name):'Commessa'}</span>`;
+}
+function qeQrModal(){
+  const t=qeQrTarget();if(!t||!qrCanDraw())return;
+  const link=qrProjectLink(t.pr.id,t.a?.id);
+  openModal(`<h3>${ico('qr','tinted pill')} Codice QR</h3>
+    <div class="qr-box">${qrSvg(link,240)}</div>
+    <p class="qr-caption">${esc(qrProjectLabel(t.pr))}${t.a?' · '+esc(t.a.name):''}</p>
+    <p class="qr-intro" style="text-align:center;margin-top:8px">Inquadrato con il telefono apre TimeTrack su questa ${t.a?'attività':'commessa'}.</p>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Chiudi</button>${_a()?`<button class="add-btn-sm" onclick="qrLabelsPdf(['${esc(t.pr.id)}'],true)">${ico('file')} Etichette PDF</button>`:''}</div>`);
 }
 // Il QR nella scheda della commessa (pagina Commesse): codice a vista, con i
 // pulsanti per quello delle attività e per le etichette
@@ -1371,6 +1402,7 @@ function renderGuideTab(){
           <li>Nella scheda che compare scegli <b>${ico('play','tinted')} Avvia timer</b> o <b>Ore a mano</b>. Se il timer corre già su quella commessa, la scheda offre <b>Ferma e registra</b>; se corre su un'altra, <b>Ferma e avvia qui</b> registra le ore della prima e fa partire la nuova. Senza un tocco non si registra niente.</li>
           <li>Le etichette le crea l'admin: nella scheda della commessa (pagina Commesse) il codice si vede subito; in Gestione → Commesse c'è ${ico('qr','tinted')} sulla riga della commessa (codice a video ed etichette PDF della commessa e delle sue attività) o <b>Etichette QR</b> in alto (una per ogni commessa attiva elencata). Una commessa completata, sospesa o non assegnata a te dà un avviso e non si compila.</li>
           <li>L'app non chiede mai la password dopo un QR, solo nella sua schermata di accesso: se un'etichetta porta a una pagina diversa che la chiede, è un'etichetta falsa e va segnalata.</li>
+          <li>Nell'Inserimento Rapido, scelta una commessa, in basso a destra compare il suo QR, che segue l'attività scelta: un clic lo ingrandisce, per esempio per farlo inquadrare a un collega.</li>
           <li>Per collegare un telefono nuovo l'admin apre Gestione → Utenti → ${ico('link','tinted')} <b>Link di collegamento</b> e il collega inquadra il QR dal monitor.</li>
         </ul>
         <h4>Griglia settimanale</h4>

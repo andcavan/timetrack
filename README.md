@@ -44,6 +44,7 @@ Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pub
 - **Scheda dopo la lettura**, con un solo pulsante principale secondo il timer: **Avvia timer**; **Ferma e registra** se il timer corre già su quella commessa; **Ferma e avvia qui** se corre su un'altra (registra le ore della prima e fa partire la nuova). C'è sempre anche **Ore a mano**. Senza un tocco non si registra niente, e ricaricando la pagina la scheda non ricompare.
 - **Etichette QR** (solo admin) in Gestione → Commesse: l'icona QR sulla riga della commessa mostra il codice a video, anche per una singola attività, e stampa il PDF con un'etichetta per la commessa e una per ogni attività. Il pulsante **Etichette QR** in alto stampa un'etichetta per ogni commessa attiva elencata. Foglio A4 da 3×7 con linee di taglio; ogni etichetta riporta codice, nome commessa, cliente e attività.
 - **QR nella scheda della commessa** (pagina Commesse, solo admin): aprendo la scheda il codice si vede subito, con i pulsanti **Ingrandisci** (anche per una singola attività) ed **Etichette PDF**.
+- **QR nell'Inserimento Rapido**: scelta una commessa, in basso a destra compare il suo codice QR, che cambia scegliendo l'attività. Un clic lo ingrandisce (l'admin può anche stampare le etichette). Senza commessa scelta non si vede.
 - **QR del link di collegamento** in Gestione → Utenti → Link di collegamento: il collega inquadra il codice dal monitor e il telefono si collega al progetto, senza copiare il link.
 - Sezione «Codici QR» nella Guida.
 

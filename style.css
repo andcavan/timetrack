@@ -413,3 +413,6 @@ tr{border-bottom:1px solid var(--hairline)}
 .qr-detail-side{flex:1;min-width:180px}
 .qr-detail-side .qr-intro{margin:0 0 8px}
 .qr-detail-btns{display:flex;gap:6px;flex-wrap:wrap}
+.qe-qr{margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:zoom-in;color:var(--text-dim)}
+.qe-qr .qr-box{margin:0;padding:3px;border-radius:6px}
+.qe-qr-label{font-size:10px;max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
