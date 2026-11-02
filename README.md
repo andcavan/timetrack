@@ -42,11 +42,13 @@ Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pub
 **Aggiunto**
 - **Nuvola dell'archivio condiviso** nella barra in alto, accanto all'orologio, come in Bomtrack: verde quando è tutto sincronizzato, blu durante l'invio, rossa con la scritta «Errore» se il server rifiuta, grigia «Senza rete» quando manca la connessione. Passandoci sopra si legge l'ora dell'ultimo aggiornamento o il motivo dell'errore.
 - **Scheda «Archivio condiviso»**, aprendo la nuvola o da Gestione → Backup: progetto collegato, account, stato, ultimo aggiornamento, tempo reale attivo o no, e il pulsante **Sincronizza ora**. L'admin ci trova anche il link di collegamento da copiare e **Scollega dispositivo**.
+- **Colore dell'utente** in Gestione → Utenti: nella finestra **Modifica utente** e in **Nuovo utente** c'è una fila di dieci colori pronti, più il selettore per sceglierne qualsiasi altro, con l'anteprima di come la persona comparirà in alto. Al nuovo utente viene proposto un colore non ancora usato da nessuno (prima la creazione ne assegnava uno a caso).
 
 **Modificato**
 - **Gestione con la grafica di Bomtrack.** Le schede stanno in una colonna a sinistra, raccolte per argomento (Anagrafiche, Persone e costi, Dati, Aiuto), che resta ferma mentre la pagina scorre; al telefono diventano una riga che scorre di lato. Una scheda è sempre aperta (si parte da Commesse): prima un secondo clic la chiudeva e la pagina restava vuota.
 - Ogni scheda ha un'intestazione con titolo e, a destra, i suoi comandi (Etichette QR, Link di collegamento, Ricalcola tutte le tariffe, Aggiorna); i moduli per aggiungere stanno in fondo, sotto un titolo «Nuovo …».
 - Stati di commesse, clienti e utenti con le etichette a contorno di Bomtrack; il ruolo dell'utente ha la sua etichetta, e la riga dell'utente collegato dice «(tu)».
+- Finestre **Modifica utente** e **Nuovo utente** ordinate come in Bomtrack: campi affiancati a due a due, stato dell'utente visibile, email (che è l'accesso) mostrata ma non modificabile. Il proprio ruolo non si può cambiare da lì, e il proprio nome o colore si aggiornano subito anche nell'intestazione.
 - Commesse: codice in evidenza, dati (cliente, referente, budget, ore, fine lavori) su una riga sotto il nome, stato in tre pulsanti attaccati e conteggio delle commesse elencate accanto ai filtri. Al telefono i pulsanti di stato mostrano solo l'icona.
 - Tariffe in tabella, con colonne allineate e date nel formato gg/mm/aaaa; nel modulo nuovo i campi data dicono «Dal» e «Al».
 - La riga «Sync Cloud» in fondo alla pagina Gestione e il bollino fisso in basso a destra sono sostituiti dalla nuvola e dalla scheda dell'archivio.

@@ -2246,11 +2246,17 @@ async function delAct(pid,aid){if(!confirm('Eliminare questa attività?'))return
 // solo admin): il browser non tocca mai la service_role key. La funzione
 // restituisce il link di invito da girare alla persona (nessuna email).
 function addUser(){
+  // Proposto il primo colore della fila non ancora usato da nessuno
+  const usati=new Set(db.users.map(u=>safeColor(u.color).toUpperCase()));
+  const nuColor=USER_COLORS.find(c=>!usati.has(c))||USER_COLORS[0];
   openModal(`<h3>${ico('plus','tinted pill')} Nuovo utente</h3>
-    <div class="modal-field"><label>Nome e cognome</label><input id="nu-name" placeholder="Mario Rossi"></div>
+    <div class="modal-field"><label>Nome e cognome</label><input id="nu-name" placeholder="Mario Rossi" oninput="document.getElementById('nu-color-preview-name').textContent=(this.value.trim()||'Nome').split(' ')[0]"></div>
     <div class="modal-field"><label>Email (sarà il login)</label><input type="email" id="nu-email" placeholder="mario.rossi@azienda.it"></div>
-    <div class="modal-field"><label>Username</label><input id="nu-username" placeholder="mario"></div>
-    <div class="modal-field"><label>Ruolo</label><select id="nu-role"><option value="operator">Operatore</option><option value="admin">Admin</option></select></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Username</label><input id="nu-username" placeholder="mario"></div>
+      <div class="modal-field"><label>Ruolo</label><select id="nu-role"><option value="operator">Operatore</option><option value="admin">Admin</option></select></div>
+    </div>
+    <div class="modal-field"><label>Colore ${userPreviewHtml('nu-color','',nuColor)}</label>${colorPickerHtml('nu-color',nuColor)}</div>
     <div id="nu-error" style="color:var(--red);font-size:13px;display:none;margin-bottom:8px"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" id="nu-submit" onclick="submitNewUser()">Crea e genera link</button></div>`);
   setTimeout(()=>document.getElementById('nu-name')?.focus(),50);
@@ -2260,6 +2266,7 @@ async function submitNewUser(){
   const email=document.getElementById('nu-email').value.trim().toLowerCase();
   const username=document.getElementById('nu-username').value.trim();
   const role=document.getElementById('nu-role').value;
+  const color=safeColor(document.getElementById('nu-color').value);
   const err=document.getElementById('nu-error');
   const showErr=m=>{err.textContent=m;err.style.display='block'};
   err.style.display='none';
@@ -2273,6 +2280,10 @@ async function submitNewUser(){
     showErr(await fnErrorMessage(error,'Creazione non riuscita'));
     return;
   }
+  // La funzione invite-user assegna un colore a caso: si mette quello scelto.
+  // Se non riesce l'utente esiste lo stesso, e il colore si cambia da Modifica.
+  const uid=data?.id;
+  if(uid){const {error:cErr}=await supa.from('profiles').update({color}).eq('id',uid);if(cErr)console.warn('Colore non salvato:',cErr)}
   try{await loadAll()}catch(e){console.error(e)}
   showInviteLinkModal(`Utente ${esc(name)} creato`,data.link);
   renderManage();
@@ -2292,18 +2303,63 @@ async function copyInviteLink(){
   try{await navigator.clipboard.writeText(el.value);showToast('Link copiato!')}
   catch(e){el.select();document.execCommand('copy');showToast('Link copiato!')}
 }
-function editUserModal(id){const u=db.users.find(x=>x.id===id);if(!u)return;openModal(`<h3>${ico('edit','tinted pill')} Modifica Utente</h3><div class="modal-field"><label>Nome completo</label><input id="eu-name" value="${esc(u.name)}"></div><div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div><div class="modal-field"><label>Email (gestita dall'account di accesso)</label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled style="opacity:.6"></div><div class="modal-field"><label>Ruolo</label><select id="eu-role"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option></select></div><div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`)}
+// ═══ COLORE UTENTE (5.2.0) ═══
+// Come in Bomtrack il colore si sceglie nella finestra dell'utente: una fila
+// di colori pronti, ben distinti fra loro e leggibili su chiaro e scuro, più
+// il selettore del browser per qualsiasi altro. Il valore resta #RRGGBB, il
+// formato che il database accetta.
+const USER_COLORS=['#3A7BE8','#2BB673','#E8803A','#D9534F','#9B59B6','#16A2B8','#E6B422','#E84393','#6C7A89','#8D6E63'];
+function colorPickerHtml(id,value){
+  const v=safeColor(value).toUpperCase();
+  return`<div class="color-pick" id="${id}-wrap">
+    ${USER_COLORS.map(c=>`<button type="button" class="color-sw${c===v?' on':''}" style="background:${c}" data-color="${c}" onclick="colorPick('${id}','${c}')" title="${c}" aria-label="Colore ${c}" aria-pressed="${c===v}"></button>`).join('')}
+    <input type="color" id="${id}" value="${v}" oninput="colorPick('${id}',this.value,true)" title="Altro colore" aria-label="Altro colore">
+  </div>`;
+}
+function colorPick(id,c,fromInput){
+  c=safeColor(c).toUpperCase();
+  const inp=document.getElementById(id);if(!inp)return;
+  if(!fromInput)inp.value=c;
+  document.querySelectorAll(`#${id}-wrap .color-sw`).forEach(b=>{const on=b.dataset.color===c;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on)});
+  const prev=document.getElementById(id+'-preview');
+  if(prev)prev.style.setProperty('--uc',c);
+}
+// Anteprima: come comparirà la persona nell'intestazione e nei report
+function userPreviewHtml(id,name,color){
+  return`<span class="user-pill user-preview" id="${id}-preview" style="--uc:${safeColor(color)}"><span class="user-dot"></span><span id="${id}-preview-name">${esc((name||'Nome').split(' ')[0])}</span></span>`;
+}
+function editUserModal(id){
+  const u=db.users.find(x=>x.id===id);if(!u)return;
+  const me=u.id===currentUser.id;
+  openModal(`<h3>${ico('edit','tinted pill')} Modifica utente</h3>
+    <div class="modal-field"><label>Nome e cognome</label><input id="eu-name" value="${esc(u.name)}" oninput="document.getElementById('eu-color-preview-name').textContent=(this.value.trim()||'Nome').split(' ')[0]"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Email <span class="label-opt">è l'accesso</span></label><input type="email" id="eu-email" value="${esc(u.email||'')}" disabled title="L'email è quella dell'account di accesso: si cambia da Supabase"></div>
+      <div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username||'')}"></div>
+      <div class="modal-field"><label>Ruolo</label><select id="eu-role" ${me?'disabled title="Non puoi cambiare il tuo ruolo"':''}><option value="operator" ${u.role==='operator'?'selected':''}>Operatore</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select></div>
+      <div class="modal-field"><label>Stato</label><div class="modal-static">${u.active===false?statusBadge('Sospeso','st-sospeso'):statusBadge('Attivo','st-attivo')}</div></div>
+    </div>
+    <div class="modal-field"><label>Colore ${userPreviewHtml('eu-color',u.name,u.color)}</label>${colorPickerHtml('eu-color',u.color)}</div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`);
+}
 async function saveUserEdit(id){
   const u=db.users.find(x=>x.id===id);if(!u)return;
+  const name=document.getElementById('eu-name').value.trim();
+  if(!name){showToast('Nome richiesto','error');return}
   const upd={
-    name:document.getElementById('eu-name').value.trim(),
+    name,
     username:document.getElementById('eu-username').value.trim()||null,
-    role:document.getElementById('eu-role').value
+    color:safeColor(document.getElementById('eu-color').value)
   };
+  // Il ruolo proprio non si cambia da qui (il campo è spento); quello degli
+  // altri lo può cambiare solo un admin, e lo verifica il server
+  if(id!==currentUser.id)upd.role=document.getElementById('eu-role').value;
   closeModal();
-  // Il cambio ruolo è consentito solo agli admin: lo verifica il server
-  const ok=await dbWrite(supa.from('profiles').update(upd).eq('id',id),'Aggiornato');
-  if(ok)renderManage();
+  const ok=await dbWrite(supa.from('profiles').update(upd).eq('id',id),'Utente aggiornato');
+  if(!ok)return;
+  // Il proprio nome o colore cambiano subito anche nell'intestazione
+  if(id===currentUser.id){const me=db.users.find(x=>x.id===id);if(me){currentUser=me;renderHeader()}}
+  renderManage();
 }
 async function toggleUserActive(uid){
   if(!_a())return;
@@ -2672,6 +2728,7 @@ window.toggleMgmt=toggleMgmt;
 window.setMgmtTab=setMgmtTab;
 window.cloudPannello=cloudPannello;
 window.cloudSincronizza=cloudSincronizza;
+window.colorPick=colorPick;
 window.renderQH=renderQH;
 window.filterProjects=filterProjects;
 window.filterMgmtProjects=filterMgmtProjects;
