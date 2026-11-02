@@ -97,8 +97,12 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     rejects(() => as(OP)(`update public.profiles set active = true where id = '${OP}';`), /Campo protetto/);
     rejects(() => as(OP)(`update public.profiles set role = 'admin' where id = '${OP}';`), /Campo protetto/);
     rejects(() => as(OP)(`update public.profiles set email = 'admin@x.it' where id = '${OP}';`), /Campo protetto/);
-    as(OP)(`update public.profiles set name = 'Operatore' where id = '${OP}';`);
-    assert.equal(sql(`select name from public.profiles where id = '${OP}';`), 'Operatore');
+    // Nome e username li assegna l'admin (5.2.1): niente operatori che si rinominano come un collega
+    rejects(() => as(OP)(`update public.profiles set name = 'Admin' where id = '${OP}';`), /Campo protetto/);
+    rejects(() => as(OP)(`update public.profiles set username = 'admin' where id = '${OP}';`), /Campo protetto/);
+    as(OP)(`update public.profiles set color = '#112233' where id = '${OP}';`);
+    as(A1)(`update public.profiles set name = 'Operatore' where id = '${OP}';`);
+    assert.equal(sql(`select name || color from public.profiles where id = '${OP}';`), 'Operatore#112233');
   });
 
   test('l\'admin attiva l\'operator, che vede solo le sue ore e nessuna tariffa', () => {
@@ -157,6 +161,40 @@ describe('supabase/schema.sql', { skip: !CONN && 'TIMETRACK_PG non impostata: te
     assert.equal(as(A1)(`select count(*) from public.timers;`), '0');
     op(`delete from public.timers where user_id = '${OP}';`);
     assert.equal(sql(`select count(*) from public.timers;`), '0');
+  });
+
+  test('ore e timer dell\'operator: solo su commesse attive e assegnate, con cliente e attività coerenti', () => {
+    as(A1)(`
+      insert into public.clients(id, name) values ('c2', 'Altro');
+      insert into public.projects(id, client_id, name, status) values ('pc', 'c1', 'Chiusa', 'completed');
+      insert into public.projects(id, client_id, name, assigned_users) values ('pa', 'c1', 'Di Admin', '{${A1}}');
+      insert into public.activities(id, project_id, name) values ('ax', 'pa', 'Altrove');
+    `);
+    const op = as(OP);
+    const ins = (id, cli, prj, act = 'null') => op(`insert into public.entries(id, user_id, client_id, project_id, activity_id, date, hours)
+      values ('${id}', '${OP}', '${cli}', '${prj}', ${act}, '2026-04-01', 1);`);
+    rejects(() => ins('g1', 'c1', 'pc'), /Commessa non attiva/);
+    rejects(() => ins('g1', 'c1', 'pa'), /Commessa non assegnata/);
+    rejects(() => ins('g1', 'c2', 'p1'), /Cliente diverso/);
+    rejects(() => ins('g1', 'c1', 'p1', `'ax'`), /Attività di un'altra commessa/);
+    rejects(() => op(`insert into public.timers(user_id, project_id) values ('${OP}', 'pc');`), /Commessa non attiva/);
+    rejects(() => op(`insert into public.timers(user_id, project_id) values ('${OP}', 'pa');`), /Commessa non assegnata/);
+    // created_at lo decide il server
+    ins('g1', 'c1', 'p1', `'a1'`);
+    op(`update public.entries set created_at = '2000-01-01' where id = 'g1';`);
+    assert.equal(sql(`select created_at > now() - interval '1 hour' from public.entries where id = 'g1';`), 't');
+    rejects(() => op(`update public.entries set project_id = 'pa', activity_id = null where id = 'g1';`), /Commessa non assegnata/);
+    // Chiusa la commessa, ore e nota si correggono ancora; spostarle no
+    as(A1)(`update public.projects set status = 'completed' where id = 'p1';`);
+    op(`update public.entries set hours = 2, note = 'ok' where id = 'g1';`);
+    assert.equal(sql(`select hours || note from public.entries where id = 'g1';`), '2ok');
+    rejects(() => op(`update public.entries set activity_id = 'ax' where id = 'g1';`), /Attività di un'altra commessa/);
+    // L'admin registra anche su commesse chiuse o non sue, ma sempre coerenti
+    as(A1)(`insert into public.entries(id, user_id, client_id, project_id, date, hours) values ('g2', '${OP}', 'c1', 'pc', '2026-04-01', 1);`);
+    rejects(() => as(A1)(`insert into public.entries(id, user_id, client_id, project_id, date, hours) values ('g3', '${A1}', 'c2', 'p1', '2026-04-01', 1);`), /Cliente diverso/);
+    as(A1)(`update public.projects set status = 'active' where id = 'p1';
+            delete from public.entries where id in ('g1', 'g2');
+            delete from public.projects where id in ('pc', 'pa'); delete from public.clients where id = 'c2';`);
   });
 
   test('modelli di commessa: solo admin', () => {

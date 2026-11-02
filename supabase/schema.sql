@@ -241,6 +241,55 @@ drop trigger if exists entries_ore_da_orario on public.entries;
 create trigger entries_ore_da_orario before insert or update on public.entries
   for each row execute function public.entries_ore_da_orario();
 
+-- Ore e timer dall'app (5.2.1): il server fa gli stessi controlli
+-- dell'inserimento rapido, che prima un operatore poteva saltare scrivendo
+-- direttamente all'API. Per chi non è admin, una registrazione nuova (o
+-- spostata su un'altra commessa) e un timer vanno solo su una commessa
+-- attiva e assegnata a lui (o a tutti). Per tutti, il cliente è quello della
+-- commessa (le tariffe si risolvono su quello) e l'attività è della commessa.
+-- Correggere ore o nota di una registrazione su una commessa chiusa resta
+-- possibile. created_at lo decide il server. Dal SQL Editor e con la
+-- service_role (script in migrations/) il controllo non vale, come in
+-- profiles_guardia; niente security definer per lo stesso motivo.
+create or replace function public.ore_guardia() returns trigger
+language plpgsql set search_path = public as $$
+declare p record; nuovo boolean; cli text;
+begin
+  if current_user not in ('authenticated', 'anon') then return new; end if;
+  if tg_table_name = 'entries' then
+    if tg_op = 'INSERT' then new.created_at := now(); else new.created_at := old.created_at; end if;
+  end if;
+  nuovo := tg_op = 'INSERT' or new.project_id is distinct from old.project_id;
+  -- timers non ha client_id: lo si legge dal json, che non dà errore
+  cli := to_jsonb(new) ->> 'client_id';
+  select client_id, status, assigned_users into p from public.projects where id = new.project_id;
+  if not found then return new; end if;   -- ci pensa la foreign key
+  if tg_table_name = 'entries' and cli is distinct from p.client_id then
+    if nuovo or cli is distinct from (to_jsonb(old) ->> 'client_id') then
+      raise exception 'Cliente diverso da quello della commessa';
+    end if;
+  end if;
+  if new.activity_id is not null and (nuovo or new.activity_id is distinct from old.activity_id)
+     and not exists (select 1 from public.activities a where a.id = new.activity_id and a.project_id = new.project_id) then
+    raise exception 'Attività di un''altra commessa';
+  end if;
+  if nuovo and not public.is_admin() then
+    if p.status <> 'active' then
+      raise exception 'Commessa non attiva: non si registrano ore';
+    end if;
+    if cardinality(p.assigned_users) > 0 and not (auth.uid() = any(p.assigned_users)) then
+      raise exception 'Commessa non assegnata a te';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists entries_guardia on public.entries;
+create trigger entries_guardia before insert or update on public.entries
+  for each row execute function public.ore_guardia();
+drop trigger if exists timers_guardia on public.timers;
+create trigger timers_guardia before insert or update on public.timers
+  for each row execute function public.ore_guardia();
+
 -- Registro delle modifiche: una riga per ogni insert/update/delete delle
 -- tabelle collegate qui sotto. Un update che non cambia nulla non si registra.
 create or replace function public.audit_registra() returns trigger
@@ -380,7 +429,9 @@ end $$;
 
 -- Protezione campi profilo. Chi passa dall'app o dall'API (ruoli
 -- `authenticated`/`anon`) e non è admin non cambia ruolo, stato, email,
--- legacy_id né id: niente auto-promozione ad admin. Dal SQL Editor e con la
+-- legacy_id né id: niente auto-promozione ad admin. Dalla 5.2.1 nemmeno nome
+-- e username: un operatore non si rinomina come un collega (li assegna
+-- l'admin, come il ruolo; il colore resta suo). Dal SQL Editor e con la
 -- service_role (script in migrations/, Edge Function) il controllo non vale:
 -- lì auth.uid() è nullo e l'amministratore del progetto deve poter
 -- rimettere a posto un profilo. L'email è dell'account di accesso: il link
@@ -401,6 +452,8 @@ begin
         or new.active is distinct from old.active
         or new.legacy_id is distinct from old.legacy_id
         or new.email is distinct from old.email
+        or new.name is distinct from old.name
+        or new.username is distinct from old.username
         or new.id <> old.id)
        and not public.is_admin() then
       raise exception 'Campo protetto: modificabile solo da un amministratore';
@@ -504,6 +557,7 @@ revoke all on function public.handle_new_user() from public, anon, authenticated
 revoke all on function public.profiles_ultimo_admin() from public, anon, authenticated;
 revoke all on function public.profiles_guardia() from public, anon, authenticated;
 revoke all on function public.entries_ore_da_orario() from public, anon, authenticated;
+revoke all on function public.ore_guardia() from public, anon, authenticated;
 revoke all on function public.audit_registra() from public, anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.is_active() to authenticated;

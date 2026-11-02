@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.2.0';
+const APP_VERSION='5.2.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -213,6 +213,9 @@ async function loadAll(){
 
 function friendlyDbError(error){
   const m=error?.message||'';
+  // I controlli del server sulle ore (entries_guardia) hanno già un testo per l'utente
+  const g=m.match(/(Commessa non (?:attiva|assegnata)[^.]*|Attività di un'altra commessa|Cliente diverso da quello della commessa)/);
+  if(g)return g[1];
   if(m.includes('row-level security')||m.includes('Campo protetto')||m.includes('riservata agli amministratori'))return'Permesso negato';
   if(m.includes('duplicate key'))return'Elemento già esistente';
   // Colonna nuova (es. le note della 4.3.0) su un database non aggiornato
@@ -1068,29 +1071,39 @@ document.addEventListener('click', function(event) {
     case 'delete-rate': delRate(id); break;
   }
 });
+let editingEntryProjectId='';
 function editEntryModal(id){
   const e=db.entries.find(x=>x.id===id);if(!e)return;
+  editingEntryProjectId=e.projectId;
   const pr=db.projects.find(p=>p.id===e.projectId),acts=pr?.activities||[];
-  // Build full cascade for client/project change
-  const clients=db.clients.filter(c=>c.active);
-  const projects=db.projects.filter(p=>p.clientId===e.clientId&&p.status==='active');
+  // Cliente e commessa si scelgono fra quelli su cui si registrano ore oggi
+  // (attivi e assegnati), ma la commessa della registrazione resta in elenco
+  // anche se nel frattempo è chiusa o è passata a un altro cliente: altrimenti
+  // il menu ripiegava sulla prima voce e correggere una nota spostava le ore.
+  const cid=pr?pr.clientId:e.clientId;
+  const clients=db.clients.filter(c=>c.active||c.id===cid);
+  const projects=editEntryProjects(cid,e.projectId);
   openModal(`<h3>${ico('edit','tinted pill')} Modifica Registrazione</h3>
     <div class="modal-field"><label>Cliente</label><select id="me-client" onchange="onEditClientChange()">
-      ${clients.map(c=>`<option value="${c.id}" ${c.id===e.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      ${clients.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Commessa</label><select id="me-project" onchange="onEditProjectChange()">
       ${projects.map(p=>`<option value="${p.id}" ${p.id===e.projectId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Attività</label><select id="me-activity">
-      ${acts.map(a=>`<option value="${a.id}" ${a.id===e.activityId?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+      ${e.activityId?'':'<option value="" selected>—</option>'}${acts.map(a=>`<option value="${a.id}" ${a.id===e.activityId?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <div class="modal-field"><label>Data</label><input type="date" id="me-date" value="${e.date}"></div>
     <div class="modal-field"><label>Orario <span class="label-opt">facoltativo</span></label><div class="time-pair"><input type="time" id="me-start" value="${e.startTime}" aria-label="Dalle" oninput="syncTimes('me')"><span>–</span><input type="time" id="me-end" value="${e.endTime}" aria-label="Alle" oninput="syncTimes('me')"></div></div>
     <div class="modal-field"><label>Ore</label><input type="number" id="me-hours" value="${e.hours}" min="0.25" max="24" step="0.25" oninput="hoursTyped('me')"></div>
     <div class="modal-field"><label>Nota</label><input type="text" id="me-note" value="${esc(e.note||'')}"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="add-btn-sm" onclick="saveEntryEdit('${id}')">Salva</button></div>`);
 }
+// Commesse proponibili nella modifica: attive e visibili, più quella attuale
+function editEntryProjects(cid,keepId){
+  return db.projects.filter(p=>p.clientId===cid&&(p.id===keepId||(p.status==='active'&&isProjectVisible(p))));
+}
 function onEditClientChange(){
   const cid=document.getElementById('me-client').value;
   const ps=document.getElementById('me-project');
-  const projs=db.projects.filter(p=>p.clientId===cid&&p.status==='active');
+  const projs=editEntryProjects(cid,editingEntryProjectId);
   ps.innerHTML=projs.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
   onEditProjectChange();
 }
@@ -1106,9 +1119,13 @@ async function saveEntryEdit(id){
   const t=readTimeFields('me');if(!t)return;
   const h=t.hours;
   if(isNaN(h)||h<=0||h>24){showToast('Ore non valide','error');return}
+  const pid=document.getElementById('me-project').value;
+  const np=db.projects.find(p=>p.id===pid);
+  if(!np){showToast('Scegli una commessa','error');return}
   const upd={
-    client_id:document.getElementById('me-client').value,
-    project_id:document.getElementById('me-project').value,
+    // Il cliente è quello della commessa; se la commessa non cambia resta com'era
+    client_id:pid===e.projectId?e.clientId:np.clientId,
+    project_id:pid,
     activity_id:document.getElementById('me-activity').value||null,
     date:document.getElementById('me-date').value,
     hours:h,
@@ -1420,7 +1437,7 @@ function renderGuideTab(){
         <p>Ogni utente ha uno dei due ruoli, applicati <b>lato server</b> (Row Level Security su Supabase): anche modificando il browser non è possibile aggirarli.</p>
         <table>
           <tr><th></th><th>Operatore</th><th>Admin</th></tr>
-          <tr><td>Registrare ore</td><td>Solo le proprie</td><td>Le proprie (e vede quelle di tutti)</td></tr>
+          <tr><td>Registrare ore</td><td>Solo le proprie, su commesse attive assegnate a lui (o a tutti)</td><td>Le proprie (e vede quelle di tutti)</td></tr>
           <tr><td>Vedere le ore</td><td>Solo le proprie</td><td>Di tutti gli utenti</td></tr>
           <tr><td>Costi, ricavi, budget €</td><td>Mai visibili (il server non li invia proprio)</td><td>Visibili ovunque</td></tr>
           <tr><td>Anagrafiche (clienti, commesse, attività)</td><td>Sola lettura</td><td>Creazione, modifica, eliminazione</td></tr>
