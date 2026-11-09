@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.3.0';
+const APP_VERSION='5.4.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -535,15 +535,18 @@ async function resetUserPassword(uid){
 // ═══ COLLEGAMENTO AL PROGETTO SUPABASE ═══
 function showSupaConnectModal(){
   openModal(`<h3>${ico('plug','tinted pill')} Collega il progetto Supabase</h3>
-    <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Il modo più semplice è aprire il <b>link di collegamento</b> che ti manda l'amministratore. In alternativa inserisci i dati del progetto: li trovi nel Dashboard Supabase in <b>Project Settings → API Keys</b>. La chiave è quella <b>pubblica</b> (<code>sb_publishable_…</code> o anon), mai la service_role.</p>
-    <div class="modal-field"><label>Indirizzo del progetto</label><input id="sc-url" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+    <p style="font-size:13px;color:var(--text-dim);margin:0 0 12px">Il modo più semplice è aprire il <b>link di collegamento</b> che ti manda l'amministratore. In alternativa inserisci i dati del progetto: li trovi nel Dashboard Supabase in <b>Project Settings → API Keys</b>. La chiave è quella <b>pubblica</b> (<code>sb_publishable_…</code> o anon), mai la service_role. Se hai il link ma si apre nel browser e non nell'app installata, incollalo intero nel primo campo.</p>
+    <div class="modal-field"><label>Indirizzo del progetto (o link di collegamento)</label><input id="sc-url" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
     <div class="modal-field"><label>Chiave pubblica</label><input id="sc-key" placeholder="sb_publishable_…" autocomplete="off"></div>
     <div id="sc-msg" style="font-size:13px;display:none;margin-bottom:8px"></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">Annulla</button><button class="btn-outline" onclick="submitSupaConnect(false)">Prova</button><button class="add-btn-sm" onclick="submitSupaConnect(true)">Collega</button></div>`);
   setTimeout(()=>document.getElementById('sc-url')?.focus(),50);
 }
 async function submitSupaConnect(save){
-  const url=document.getElementById('sc-url').value,key=document.getElementById('sc-key').value;
+  let url=document.getElementById('sc-url').value,key=document.getElementById('sc-key').value;
+  // Incollato il link di collegamento intero (es. nell'app installata su iPhone)
+  const dalLink=parseLinkCollegamento(url);
+  if(dalLink){url=dalLink.url;key=dalLink.key;document.getElementById('sc-url').value=url;document.getElementById('sc-key').value=key}
   const msg=document.getElementById('sc-msg');
   const say=(t,bad)=>{msg.textContent=t;msg.style.color=bad?'var(--red)':'var(--green)';msg.style.display='block'};
   say('Prova in corso…');
@@ -2788,3 +2791,110 @@ function updateHeaderClock(){
     renderLogin();
   }
 })();
+
+// ═══ INSTALLARE L'APP (dalla 5.4.0) ═══
+// Come Bomtrack: manifest.webmanifest, icone in icone/ e un service worker
+// (sw.js) rendono TimeTrack installabile, con la sua icona sulla schermata
+// Home e una finestra tutta sua. Qui si registra il service worker e si
+// propone l'installazione:
+//   - Android, e Chrome/Edge sul PC: il browser manda `beforeinstallprompt`;
+//     lo si tiene da parte e la finestra di installazione la apre il pulsante
+//     in testata o il riquadro in basso (questo solo su schermi touch);
+//   - iPhone e iPad: il browser non propone niente e non ha un evento. Si
+//     mostrano gli stessi pulsante e riquadro, che spiegano i due tocchi di
+//     Safari (Condividi → Aggiungi alla schermata Home).
+// Su file:// (doppio clic) il service worker non esiste: non si propone nulla.
+const INSTALL_NO_KEY='tt_install_no',INSTALL_NO_MS=30*24*60*60*1000;
+let _installEvt=null;
+function installGiaApp(){
+  try{if(window.matchMedia('(display-mode: standalone)').matches)return true}catch(e){}
+  return navigator.standalone===true;
+}
+function installIOS(){
+  const ua=navigator.userAgent||'';
+  return /iphone|ipad|ipod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+}
+function installDisponibile(){
+  if(installGiaApp())return false;
+  return !!_installEvt||(installIOS()&&/^https?:$/.test(location.protocol));
+}
+// Pulsante in testata e riquadro in basso seguono lo stesso stato. Il riquadro
+// si chiude con «Non ora» e torna dopo 30 giorni; il pulsante resta.
+function installAggiorna(){
+  const si=installDisponibile();
+  const btn=document.getElementById('install-btn');
+  if(btn)btn.style.display=si?'':'none';
+  let no=0;try{no=+localStorage.getItem(INSTALL_NO_KEY)||0}catch(e){}
+  let touch=false;try{touch=window.matchMedia('(pointer:coarse)').matches}catch(e){}
+  const mostra=si&&touch&&Date.now()-no>INSTALL_NO_MS;
+  let el=document.getElementById('install-banner');
+  document.body.classList.toggle('con-install',mostra);
+  if(!mostra){if(el)el.remove();return}
+  if(el)return;
+  el=document.createElement('div');
+  el.id='install-banner';el.className='install-banner';el.setAttribute('role','region');el.setAttribute('aria-label','Installa l\'app');
+  el.innerHTML=`<img src="icone/icona-192.png" alt="" width="36" height="36">
+    <div class="ib-testo"><b>Installa TimeTrack</b><span>Sulla schermata Home, si apre come un'app.</span></div>
+    <button class="btn-ghost" onclick="installNonOra()">Non ora</button>
+    <button class="add-btn-sm" onclick="installaApp()">Installa</button>`;
+  document.body.appendChild(el);
+}
+function installNonOra(){
+  try{localStorage.setItem(INSTALL_NO_KEY,String(Date.now()))}catch(e){}
+  installAggiorna();
+}
+async function installaApp(){
+  if(_installEvt){
+    const evt=_installEvt;_installEvt=null;   // si può usare una volta sola
+    try{await evt.prompt();await evt.userChoice}catch(e){console.error(e)}
+    installAggiorna();
+    return;
+  }
+  if(installIOS())installIstruzioniIOS();
+}
+// iPhone e iPad: l'app aggiunta alla Home ha un archivio tutto suo, separato
+// da quello di Safari. Dentro non trova né il progetto collegato né l'accesso:
+// al primo avvio si ricollega e si rientra. Per non dover chiedere di nuovo il
+// link all'amministratore, l'indirizzo della pagina diventa il link di
+// collegamento (l'app installata parte da lì e lo legge da sola) e il link si
+// può comunque copiare e incollare in «Collega progetto».
+function installIstruzioniIOS(){
+  const link=supa?connectionLink():'';
+  if(link){try{history.replaceState(null,'',link.slice(link.indexOf('?'))+location.hash)}catch(e){}}
+  openModal(`<h3>${ico('download','tinted pill')} Installa TimeTrack</h3>
+    <ol class="install-passi">
+      <li>Tocca <b>Condividi</b> ${ico('share','tinted','Condividi')} nella barra di Safari (in basso, o in alto su iPad).</li>
+      <li>Scorri e scegli <b>Aggiungi alla schermata Home</b>, poi <b>Aggiungi</b>.</li>
+      <li>Apri TimeTrack dalla sua icona e accedi con email e password: l'app installata non condivide l'accesso con Safari.</li>
+    </ol>
+    ${link?`<p style="font-size:13px;color:var(--text-dim);margin:12px 0 8px">Se al primo avvio chiede di collegare il progetto, scegli «Collega progetto» e incolla questo link nel primo campo:</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="il-link" readonly value="${esc(link)}" style="flex:1;min-width:0;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" onclick="this.select()">
+      <button class="btn-outline" onclick="copyInviteLink()">${ico('copy','tinted')} Copia</button>
+    </div>`:''}
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Ho capito</button></div>`);
+}
+// Il link di collegamento intero, incollato dove va l'indirizzo del progetto
+function parseLinkCollegamento(testo){
+  const s=String(testo||'').trim();
+  if(!/[?&]supabase=/.test(s))return null;
+  try{
+    const q=new URL(s,location.href).searchParams;
+    const url=q.get('supabase'),key=q.get('chiave');
+    return url&&key?{url,key}:null;
+  }catch(e){return null}
+}
+window.addEventListener('beforeinstallprompt',e=>{
+  // Niente proposta automatica del browser: la fanno pulsante e riquadro,
+  // che si possono chiudere e ritrovare.
+  e.preventDefault();
+  _installEvt=e;
+  installAggiorna();
+});
+window.addEventListener('appinstalled',()=>{_installEvt=null;installAggiorna();showToast('TimeTrack è installata')});
+document.addEventListener('DOMContentLoaded',installAggiorna);
+if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('Service worker non registrato:',e));
+  });
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="TimeTrack">
+  <!-- Lo stesso orologio su fondo blu dell'icona nella scheda (index.html):
+       questo file lo legge il sistema quando installa l'app, e deve bastare a
+       se stesso. Se il logo cambia, vanno cambiati tutti e due, e vanno
+       rigenerati i PNG di questa cartella (README, «Installare l'app»). -->
+  <rect width="64" height="64" rx="14" fill="#3A7BE8"/>
+  <g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="32" r="18"/>
+    <polyline points="32 20 32 32 41 37"/>
+  </g>
+</svg>
