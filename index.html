@@ -128,6 +128,33 @@
     </div>
   </div>
 
+  <!-- SCHEDE (dalla 5.5.0): a sinistra le commesse dell'utente, a destra
+       la zona «Tempo» e la settimana della pagina Ore, spostate qui da
+       skSposta() in schede.js (gli stessi elementi, non una copia) -->
+  <div id="view-schede" class="view-panel">
+    <div class="sk-layout">
+      <aside class="sk-side" aria-label="Le mie commesse">
+        <h2 class="sk-side-title"><svg class="ico ic-layers tinted pill" aria-hidden="true"><use href="#ic-layers"></use></svg> Le mie commesse</h2>
+        <div class="sk-tabs" role="group" aria-label="Quali commesse">
+          <button type="button" class="sk-tab" id="sk-tab-pref" onclick="skVista('pref')"><svg class="ico ic-star" aria-hidden="true"><use href="#ic-star"></use></svg> Preferite <span class="n" id="sk-n-pref">0</span></button>
+          <button type="button" class="sk-tab" id="sk-tab-tutte" onclick="skVista('tutte')">Tutte attive <span class="n" id="sk-n-tutte">0</span></button>
+        </div>
+        <div id="sk-cerca-box" style="display:none">
+          <input type="search" class="sk-search" id="sk-cerca" placeholder="Cerca codice, nome o cliente…" autocomplete="off" oninput="skCerca(this.value)" aria-label="Cerca commessa">
+          <p class="sk-hint">Tocca la stella per tenere una commessa fra le preferite.</p>
+        </div>
+        <div class="sk-list" id="sk-list"></div>
+      </aside>
+      <div class="sk-right">
+        <section class="sk-panel">
+          <div class="sk-sel" id="sk-sel"></div>
+          <div id="sk-tempo-slot"></div>
+        </section>
+        <div id="sk-week-slot"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- DASHBOARD -->
   <div id="view-dashboard" class="view-panel">
     <div class="dash-wrap">
@@ -234,6 +261,7 @@
 
 <script src="icons.js"></script>
 <script src="app.js"></script>
+<script src="schede.js"></script>
 <script src="theme.js"></script>
 
 <!-- EXPORT REPORT MODAL -->

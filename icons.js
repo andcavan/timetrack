@@ -45,6 +45,7 @@ const ICONS = {
   stop: '<rect x="5.6" y="5.6" width="12.8" height="12.8" rx="2"/>',
   download: '<path d="M12 3.6v11.6"/><path d="m7.2 10.6 4.8 4.8 4.8-4.8"/><path d="M4.2 16.4v2.4a1.8 1.8 0 0 0 1.8 1.8h12a1.8 1.8 0 0 0 1.8-1.8v-2.4"/>',
   history: '<path d="M3.8 12a8.2 8.2 0 1 0 2.4-5.8"/><path d="M3.6 3.8v4.6h4.6"/><path d="M12 7.6v4.6l3.2 1.9"/>',
+  star: '<path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
   layers: '<path d="m12 3.4 8.6 4.4-8.6 4.4-8.6-4.4z"/><path d="m3.4 12 8.6 4.4 8.6-4.4"/><path d="m3.4 16.2 8.6 4.4 8.6-4.4"/>',
 };
 
@@ -58,7 +59,7 @@ const ICON_TINT = {
   clipboard: 'accent', calendar: 'accent', settings: 'text-dim', book: 'text-dim',
   cloud: 'accent', save: 'accent', users: 'accent', user: 'accent', wrench: 'purple',
   folder: 'orange', bolt: 'orange', plug: 'accent', dot: 'accent',
-  play: 'green', stop: 'red', download: 'accent', share: 'accent', history: 'purple', layers: 'orange', qr: 'accent'
+  play: 'green', stop: 'red', download: 'accent', share: 'accent', history: 'purple', layers: 'orange', star: 'orange', qr: 'accent'
 };
 
 function icoEsc(s) {

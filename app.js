@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.4.0';
+const APP_VERSION='5.5.0';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -249,7 +249,7 @@ function rerenderCurrent(){
   if(document.querySelector('#modal-root .modal-overlay'))return; // modali di modifica aperti
   if(!currentUser)return;
   renderTimer();
-  ({timesheet:renderWeek,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[currentView]?.();
+  ({timesheet:renderWeek,schede:renderWeek,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[currentView]?.();
 }
 
 // Sottoscrizione realtime per tabella: su ogni cambiamento ricarica
@@ -584,7 +584,7 @@ function renderHeader(){
   const pill=document.getElementById('user-pill');
   pill.style.borderColor=safeColor(currentUser.color);
   pill.innerHTML=`<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}`;
-  const tabs=[{id:'timesheet',label:'Ore',icon:`${ico('calendar','tinted pill')}`},{id:'dashboard',label:'Report',icon:`${ico('chart','tinted pill')}`}];
+  const tabs=[{id:'timesheet',label:'Ore',icon:`${ico('calendar','tinted pill')}`},{id:'schede',label:'Schede',icon:`${ico('layers','tinted pill')}`},{id:'dashboard',label:'Report',icon:`${ico('chart','tinted pill')}`}];
   if(_a())tabs.push({id:'projects',label:'Commesse',icon:`${ico('clipboard','tinted pill')}`},{id:'manage',label:'Gestione',icon:`${ico('settings','tinted pill')}`});
   document.getElementById('main-nav').innerHTML=tabs.map(t=>`<button class="nav-btn ${currentView===t.id?'active':''}" onclick="setView('${t.id}')">${t.icon} ${t.label}</button>`).join('');
 }
@@ -595,8 +595,10 @@ function canSeeView(v){return _a()||!ADMIN_VIEWS.includes(v)}
 function setView(v){
   if(!canSeeView(v))v='timesheet';
   currentView=v;document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('view-'+v)?.classList.add('active');renderHeader();renderTimer();
-  ({timesheet:renderTimesheet,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[v]?.();
+  document.getElementById('view-'+v)?.classList.add('active');
+  skSposta(v==='schede'); // zona Tempo e settimana vanno dove servono (schede.js)
+  renderHeader();renderTimer();
+  ({timesheet:renderTimesheet,schede:renderSchede,dashboard:renderDashboard,projects:renderProjectReport,manage:renderManage})[v]?.();
 }
 
 // ═══ TIMESHEET ═══
@@ -604,6 +606,7 @@ function renderTimesheet(){
   selectedWeek=selectedWeek||getWeekStart(todayStr());
   document.getElementById('qe-project-search').value='';
   document.getElementById('qe-project').value='';
+  _qeProjectFill(); // senza commessa anche l'attività si svuota (anche tornando da Schede)
   if(!document.getElementById('qe-date').value)document.getElementById('qe-date').value=todayStr();
   selectedDay=document.getElementById('qe-date').value;
   renderQH();renderWeek();renderTimer();renderQeQr();
@@ -693,6 +696,7 @@ function resetQuickEntry(){
   onQeProjectChange3();
   ['qe-hours','qe-note','qe-start','qe-end'].forEach(id=>{document.getElementById(id).value=''});
   renderQH();
+  if(currentView==='schede')skApplica(); // sulla pagina Schede commessa e attività restano scelte
 }
 
 // ═══ TIMER ═══
@@ -702,6 +706,7 @@ function resetQuickEntry(){
 function timerElapsedMs(){return db?.timer?Math.max(0,Date.now()-new Date(db.timer.startedAt).getTime()):0}
 function fmtElapsed(ms){const t=Math.floor(ms/1000),h=Math.floor(t/3600),m=Math.floor(t%3600/60),sec=t%60;return`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function renderTimer(){
+  if(currentView==='schede')renderSkBarra(); // la scheda mostra su quale attività corre il timer
   const bar=document.getElementById('timer-bar'),chip=document.getElementById('timer-chip'),btn=document.getElementById('timer-start-btn');
   if(!bar||!db)return;
   const t=db.timer;
