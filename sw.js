@@ -31,6 +31,7 @@ const FILE = [
   './style.css',
   './icons.js',
   './app.js',
+  './schede.js',
   './theme.js',
   './manifest.webmanifest',
   './icone/icona.svg',

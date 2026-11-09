@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 5.4.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.5.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,22 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.5.0] — 2026-11-09
+
+Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pubblicano `app.js`, `index.html`, `style.css`, `icons.js`, `sw.js` e, **nuovo**, `schede.js`, nella stessa cartella dell'app.
+
+**Aggiunto**
+- **Pagina «Schede»**, un altro modo di registrare le ore, accanto a «Ore» (che resta com'è).
+  - A sinistra, **Le mie commesse**: le commesse attive su cui puoi registrare (all'operatore solo quelle assegnate a lui), una scheda per commessa con codice, nome, cliente e le tue ore di oggi.
+  - **Preferite**: la stella su una scheda la tiene fra le preferite, così non si cerca ogni volta fra tutte. «Tutte attive» le mostra tutte, con la ricerca per codice, nome o cliente. Le preferite restano **su questo dispositivo**: su un altro PC o telefono si scelgono da capo.
+  - La scheda aperta mostra referente, scadenza, le tue ore rispetto a quelle previste, la nota della commessa e le **attività**, ognuna con le tue ore; quella con il timer in corso è segnata in verde. Una commessa con una sola attività la sceglie da sé.
+  - A destra, sotto «Stai registrando su…», gli stessi comandi della pagina Ore (timer, data, orario, ore, nota, **Registra Ore** e **Avvia timer**) e sotto la **settimana**, uguale a quella di Ore. Dopo una registrazione commessa e attività restano scelte.
+  - Su tablet e telefono le schede vanno sopra i comandi; al telefono quelle chiuse stanno su una riga.
+
+**Corretto**
+- Al telefono la barra delle pagine scorre di lato invece di allargare la pagina, e i pulsanti dell'intestazione vanno a capo (con il timer in corso uscivano dallo schermo).
+- Tornando su «Ore» senza commessa scelta, anche il campo Attività si svuota.
 
 ### [5.4.0] — 2026-11-09
 

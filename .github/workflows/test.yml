@@ -33,6 +33,7 @@ jobs:
       - name: Sintassi di app.js e degli script
         run: |
           node --check app.js
+          node --check schede.js
           node --check icons.js
           node --check theme.js
           node --check sw.js

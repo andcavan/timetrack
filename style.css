@@ -109,6 +109,11 @@ input,select,button,textarea{font-family:var(--font)}
 /* Al telefono l'intestazione va su due righe: l'altezza fissa la faceva
    sbordare sopra il contenuto */
 @media(max-width:760px){#app-header{height:auto;min-height:56px;padding:8px 12px;justify-content:center}}
+/* Con la voce «Schede» (5.5.0) la barra è più lunga: sui portatili i pulsanti
+   si stringono un po', e al telefono la barra scorre di lato invece di
+   allargare la pagina. */
+@media(max-width:1360px){.nav-btn{padding:8px 10px}}
+@media(max-width:760px){.header-right{flex-wrap:wrap;justify-content:center;row-gap:6px}.nav{max-width:100%;min-width:0;overflow-x:auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav-btn{flex:none}}
 .user-pill{display:flex;align-items:center;gap:6px;padding:4px 12px 4px 6px;border-radius:20px;border:1.5px solid;font-size:13px;font-weight:500}
 .user-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .logout-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}
@@ -535,3 +540,77 @@ tr{border-bottom:1px solid var(--hairline)}
 .install-passi .ico{width:1.15em;height:1.15em}
 /* Finché il riquadro c'è, la pagina finisce sopra di lui e non sotto */
 body.con-install{padding-bottom:96px}
+/* Pagina «Schede» (dalla 5.5.0): commesse a sinistra, Tempo e settimana a destra.
+   Sotto i 900px la barra va sopra; al telefono le schede chiuse stanno su una riga. */
+#app-main:has(#view-schede.active){max-width:1320px}
+.sk-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:20px;align-items:start}
+.sk-side{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;position:sticky;top:76px;max-height:calc(100vh - 100px);overflow:auto}
+.sk-side-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sk-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;gap:3px}
+.sk-tab{border:none;background:transparent;color:var(--text-dim);font-size:13px;font-weight:600;padding:7px 8px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.sk-tab .n{font-family:var(--mono);font-size:11px;background:var(--card-hover);border-radius:10px;padding:1px 7px}
+.sk-tab.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px var(--shadow-soft)}
+.sk-tab.on .n{background:var(--accent-soft-hi);color:var(--accent)}
+#sk-cerca-box{display:flex;flex-direction:column;gap:8px}
+.sk-search{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;width:100%;outline:none}
+.sk-hint{font-size:12px;color:var(--text-dim);line-height:1.4;margin:0}
+.sk-list{display:flex;flex-direction:column;gap:8px}
+.sk-card{border:1px solid var(--border);border-left:4px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg);cursor:pointer;transition:border-color .15s,background .15s}
+.sk-card:hover{border-color:var(--text-dim)}
+.sk-card.sel{border-color:var(--accent-line);border-left-color:var(--accent);background:var(--accent-soft);cursor:default}
+.sk-row{display:flex;align-items:flex-start;gap:8px}
+.sk-main{flex:1;min-width:0}
+.sk-code{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent)}
+.sk-name{font-weight:700;font-size:14px;line-height:1.25;margin-top:1px;overflow-wrap:anywhere}
+.sk-client{font-size:12px;color:var(--text-dim);margin-top:2px}
+.sk-oggi{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text-dim);white-space:nowrap;padding-top:1px}
+.sk-star{border:none;background:none;cursor:pointer;color:var(--text-dim);padding:2px;margin:-2px -4px 0 0;line-height:0;border-radius:6px}
+.sk-star .ico{width:19px;height:19px}
+.sk-star.on{color:var(--orange-solid)}
+.sk-star.on .ico{fill:currentColor}
+.sk-star:hover{background:var(--card-hover)}
+.sk-det{margin-top:10px;padding-top:10px;border-top:1px solid var(--hairline);display:flex;flex-direction:column;gap:8px}
+.sk-facts{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px}
+.sk-facts dt{color:var(--text-dim)}
+.sk-facts dd{font-weight:600}
+.sk-bar{height:6px;background:var(--card-hover);border-radius:4px;overflow:hidden;margin-top:3px}
+.sk-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.sk-note{font-size:12px;color:var(--text-dim);font-style:italic;line-height:1.4;white-space:pre-line}
+.sk-lab{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+.sk-acts{display:flex;flex-direction:column;gap:5px}
+.sk-act{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;color:var(--text);text-align:left;width:100%}
+.sk-act .nm{min-width:0;overflow-wrap:anywhere}
+.sk-act .dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);flex:none}
+.sk-act .h{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-dim);flex:none}
+.sk-act .h.sk-run{color:var(--green)}
+.sk-act:hover{border-color:var(--text-dim)}
+.sk-act.on{border-color:var(--accent);background:var(--accent-soft-hi);color:var(--accent);font-weight:600}
+.sk-act.on .dot{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 3px,transparent 4px)}
+.sk-act.run .dot{border-color:var(--green);background:var(--green)}
+.sk-empty{border:1px dashed var(--border);border-radius:10px;padding:14px;text-align:center;font-size:13px;color:var(--text-dim);line-height:1.5}
+.sk-link{background:none;border:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
+.sk-right{display:flex;flex-direction:column;gap:20px;min-width:0}
+.sk-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px 24px}
+.sk-sel{margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.sk-sel .k{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em}
+.sk-sel .v{font-size:18px;font-weight:700;margin-top:2px;overflow-wrap:anywhere}
+.sk-sel .v .c{font-family:var(--mono);color:var(--accent);font-size:15px;margin-right:6px}
+.sk-sel .a{font-size:14px;color:var(--text-dim);margin-top:2px}
+.sk-sel .a b{color:var(--text)}
+.sk-manca{color:var(--orange)}
+#view-schede .qz-tempo{padding:0;border:none}
+#view-schede .qz-title{display:none}
+#view-schede .week-section{margin-top:0}
+@media(max-width:900px){
+  .sk-layout{grid-template-columns:1fr}
+  .sk-side{position:static;max-height:none}
+}
+@media(max-width:560px){
+  .sk-side,.sk-panel{padding:14px}
+  .sk-card:not(.sel){padding:8px 12px}
+  .sk-card:not(.sel) .sk-client{display:none}
+  .sk-card:not(.sel) .sk-row{align-items:center}
+  .sk-card:not(.sel) .sk-code{display:inline;margin-right:6px}
+  .sk-card:not(.sel) .sk-name{display:inline;font-size:13px}
+  .sk-note{display:none}
+}
