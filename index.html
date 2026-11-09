@@ -7,6 +7,16 @@
 <!-- Icona dell'app nella scheda del browser: SVG inline (data URI), nessun file esterno da caricare sull'hosting -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233A7BE8'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='32' cy='32' r='18'/%3E%3Cpolyline points='32 20 32 32 41 37'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0F1117">
+<!-- Installabile come app sul telefono e sul PC (dalla 5.4.0), come Bomtrack:
+     manifest, icone e service worker (sw.js, registrato da app.js). Su iPhone
+     e iPad il manifest non basta: icona e nome per la schermata Home li
+     leggono dai meta apple-*. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TimeTrack">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <!-- Il tema si applica prima del primo disegno (stessa chiave di THEME_KEY in theme.js): niente lampo scuro per chi ha scelto il chiaro. -->
 <script>try{var t=localStorage.getItem('tt_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,6 +67,8 @@
     <button class="cloud-stato" id="cloud-stato" style="display:none" onclick="cloudPannello()"></button>
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
+    <!-- Compare solo quando il dispositivo può installare l'app e non l'ha ancora fatto (installPrepara in app.js) -->
+    <button class="logout-btn btn-icon" id="install-btn" style="display:none" onclick="installaApp()" title="Installa l'app su questo dispositivo" aria-label="Installa l'app"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg></button>
     <button class="logout-btn btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
     <button class="logout-btn btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password"><svg class="ico ic-key tinted" aria-hidden="true"><use href="#ic-key"></use></svg></button>
     <button class="logout-btn" onclick="logout()">Esci</button>

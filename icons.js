@@ -20,6 +20,8 @@ const ICONS = {
   file: '<path d="M13.4 3.4H6.9a1.6 1.6 0 0 0-1.6 1.6v14a1.6 1.6 0 0 0 1.6 1.6h10.2a1.6 1.6 0 0 0 1.6-1.6V8.4z"/><path d="M13.4 3.4v5h5.3"/><path d="M8.6 13h6.8M8.6 16.6h4.8"/>',
   sheet: '<rect x="3.4" y="4.4" width="17.2" height="15.2" rx="1.8"/><path d="M3.4 9.6h17.2M3.4 14.6h17.2M9.6 4.4v15.2"/>',
   link: '<path d="M10.2 13.8a4.2 4.2 0 0 0 6 0l2.9-2.9a4.2 4.2 0 0 0-6-6l-1.7 1.7"/><path d="M13.8 10.2a4.2 4.2 0 0 0-6 0l-2.9 2.9a4.2 4.2 0 0 0 6 6l1.7-1.7"/>',
+  // Il «Condividi» di Safari, per spiegare come si installa l'app su iPhone (dalla 5.4.0)
+  share: '<path d="M12 15.4V3.6"/><path d="m7.4 8.2 4.6-4.6 4.6 4.6"/><path d="M8.4 10.6H6.6a1.4 1.4 0 0 0-1.4 1.4v7.4a1.4 1.4 0 0 0 1.4 1.4h10.8a1.4 1.4 0 0 0 1.4-1.4V12a1.4 1.4 0 0 0-1.4-1.4h-1.8"/>',
   copy: '<rect x="8.6" y="8.6" width="11.9" height="11.9" rx="2"/><path d="M5.6 15.4H4.5a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1h9.9a1 1 0 0 1 1 1v1.1"/>',
   save: '<path d="M5.4 3.6h11l3.2 3.2v13a1.8 1.8 0 0 1-1.8 1.8H5.4a1.8 1.8 0 0 1-1.8-1.8V5.4a1.8 1.8 0 0 1 1.8-1.8z"/><path d="M7.8 3.6v5.6h8V3.6"/><path d="M7.8 21.6v-6.4h8.4v6.4"/>',
   book: '<path d="M4.4 4.8a1.8 1.8 0 0 1 1.8-1.8h11.4a1.8 1.8 0 0 1 1.8 1.8v14.4a1.8 1.8 0 0 1-1.8 1.8H6.2a1.8 1.8 0 0 1-1.8-1.8z"/><path d="M7.8 3v18"/><path d="M10.8 7.8h5.4M10.8 11.2h5.4M10.8 14.6h3.4"/>',
@@ -56,7 +58,7 @@ const ICON_TINT = {
   clipboard: 'accent', calendar: 'accent', settings: 'text-dim', book: 'text-dim',
   cloud: 'accent', save: 'accent', users: 'accent', user: 'accent', wrench: 'purple',
   folder: 'orange', bolt: 'orange', plug: 'accent', dot: 'accent',
-  play: 'green', stop: 'red', download: 'accent', history: 'purple', layers: 'orange', qr: 'accent'
+  play: 'green', stop: 'red', download: 'accent', share: 'accent', history: 'purple', layers: 'orange', qr: 'accent'
 };
 
 function icoEsc(s) {

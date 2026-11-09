@@ -1,0 +1,21 @@
+{
+  "name": "TimeTrack — Gestione Ore di Lavoro",
+  "short_name": "TimeTrack",
+  "description": "Registrazione delle ore di lavoro su commesse e attività.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "it",
+  "dir": "ltr",
+  "background_color": "#0F1117",
+  "theme_color": "#0F1117",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icone/icona-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icone/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icone/icona-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icone/icona.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

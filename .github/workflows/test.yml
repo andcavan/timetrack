@@ -35,6 +35,7 @@ jobs:
           node --check app.js
           node --check icons.js
           node --check theme.js
+          node --check sw.js
           for f in migrations/*.mjs; do node --check "$f"; done
       - name: Versione allineata fra app.js e README
         run: |
@@ -44,3 +45,5 @@ jobs:
           test -n "$js" && test "$js" = "$md"
       - name: Schema su Postgres
         run: node --test test/schema.test.mjs
+      - name: App installabile (manifest, icone, service worker)
+        run: node --test test/pwa.test.mjs

@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 5.3.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.4.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,18 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.4.0] — 2026-11-09
+
+Nessuna modifica al database: non serve rieseguire `supabase/schema.sql`. Si pubblicano `app.js`, `index.html`, `style.css`, `icons.js` e, **nuovi**, `manifest.webmanifest`, `sw.js` e la cartella `icone/`, tutti nella stessa cartella dell'app. L'installazione funziona solo se l'app è pubblicata su **https** (o aperta da `localhost`).
+
+**Aggiunto**
+- **TimeTrack si installa come un'app**, come Bomtrack: icona sulla schermata Home (o sul desktop), finestra propria senza la barra del browser.
+  - **Android** (Chrome, Edge, Samsung Internet): in basso compare il riquadro «Installa TimeTrack» con **Installa** e **Non ora**; «Non ora» lo nasconde per 30 giorni. Lo stesso comando resta nell'intestazione (icona con la freccia in giù) finché l'app non è installata.
+  - **iPhone e iPad**: Safari non propone mai l'installazione da sé. Riquadro e pulsante mostrano i due tocchi da fare (Condividi → Aggiungi alla schermata Home). L'app installata su iPhone non vede l'accesso di Safari: al primo avvio si rientra con email e password, e se chiede il progetto si incolla il link di collegamento (le istruzioni lo mostrano già pronto da copiare).
+  - **PC** (Chrome, Edge): pulsante nell'intestazione, oppure l'icona di installazione nella barra degli indirizzi.
+- In «Collega progetto» si può incollare il **link di collegamento intero** nel campo dell'indirizzo: indirizzo e chiave si compilano da soli.
+- Senza rete l'app installata si apre lo stesso (schermata di accesso e avviso «Senza rete») invece di una pagina bianca. Le ore restano su Supabase: senza rete non si registrano.
 
 ### [5.3.0] — 2026-11-02
 
@@ -232,6 +244,17 @@ Gestione Supabase allineata a quella di Bomtrack. **Richiede un aggiornamento de
 Versione storica su blob JSON singolo (`timetrack_data`) con login lato client. Funzioni principali maturate in questo ciclo: inserimento rapido ore, gestione commesse/clienti/attività, tariffe separate, accoppiamento commesse–utenti, export report PDF ed Excel, filtri commessa, disattivazione utente, data/ora in header, estrazione di CSS e JS in file separati.
 
 ---
+
+## Installare l'app (dalla 5.4.0)
+
+TimeTrack è una PWA, come Bomtrack: `manifest.webmanifest` (nome, colori, icone), `sw.js` (service worker) e le icone in `icone/`.
+
+- **Serve https.** Il telefono propone l'installazione solo se l'app è pubblicata su `https://` (o aperta da `localhost`). Su `http://` o aprendo `index.html` con un doppio clic l'app funziona come prima, ma non si installa.
+- **Tutti i file nella stessa cartella**: `manifest.webmanifest` e `sw.js` accanto a `index.html`, la cartella `icone/` intera. Se l'app sta in una sottocartella (`https://tuodominio.it/timetrack/`) va bene: i percorsi sono relativi.
+- **Il service worker chiede prima alla rete**: chi è in linea riceve sempre i file appena pubblicati, senza svuotare la cache. Le chiamate a Supabase non passano mai dalla cache.
+- **iPhone/iPad**: l'app installata ha un archivio suo, separato da Safari: al primo avvio si rientra e, se serve, si incolla il link di collegamento in «Collega progetto». Su iOS niente proposta automatica: la fa l'app con le istruzioni.
+- **Cambiare l'icona**: si modifica `icone/icona.svg` (e l'icona nella scheda in `index.html`), poi si rigenerano i PNG (`icona-192.png`, `icona-512.png`, `icona-maskable-512.png` con lo sfondo fino ai bordi, `apple-touch-icon.png` 180×180).
+- Controllo: `node --test test/pwa.test.mjs` (gira anche in CI).
 
 ## Sicurezza (versione 2)
 
