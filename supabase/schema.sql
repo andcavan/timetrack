@@ -9,11 +9,16 @@
 --  (con test/supabase-stub.sql al posto di Supabase) e ne prova le
 --  regole: RLS, guardie sui profili, ricalcolo dei costi.
 --
---  DOPO questo script, nel Dashboard:
---   1. Authentication → Sign In / Up → disabilitare "Allow new users to sign up"
---   2. Authentication → Sign In / Up → Password: minimo 8 caratteri
---   3. Authentication → URL Configuration → Site URL = URL dell'app
---      (serve per i link di invito/recovery)
+--  Su un progetto nuovo va eseguito PRIMA di creare qualsiasi utente
+--  (il primo utente diventa admin solo se il trigger c'è già).
+--  DOPO questo script, nel Dashboard (passi completi nel README,
+--  «Nuovo progetto Supabase da zero»):
+--   1. Authentication → Sign In / Providers → disabilitare "Allow new users to sign up"
+--   2. Provider Email: password minimo 8 caratteri, Email OTP Expiration 86400
+--   3. Edge Function invite-user (verifica JWT disattivata)
+--   4. Primo utente: Authentication → Users → Add user, con Auto Confirm
+--   5. Authentication → URL Configuration → Site URL = link di
+--      collegamento dell'app; Redirect URLs = indirizzo dell'app + **
 -- ============================================================
 
 set client_min_messages = warning;   -- i «drop … if exists» di una riesecuzione non sono notizie

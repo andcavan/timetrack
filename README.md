@@ -2,7 +2,7 @@
 
 App di registrazione ore con Supabase (Auth + Postgres + RLS).
 
-**Versione corrente: 5.5.0** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
+**Versione corrente: 5.5.1** — mostrata in alto a destra del titolo "TimeTrack" (header e schermata di login).
 
 ---
 
@@ -34,6 +34,22 @@ Numerazione `MAJOR.MINOR.PATCH`:
 ## Changelog
 
 Formato: `## [versione] — AAAA-MM-GG`, voci raggruppate in *Aggiunto / Modificato / Corretto / Sicurezza*.
+
+### [5.5.1] — 2026-11-13
+
+Nessuna modifica al database né al comportamento dell'app. Si pubblica `app.js` (cambia solo il testo della Guida). La Edge Function `invite-user` cambia solo in un messaggio di errore: ripubblicarla è facoltativo.
+
+**Aggiunto**
+- Nel README la sezione **«Nuovo progetto Supabase da zero»**: i passi, in ordine, per un progetto nuovo con l'app di oggi (file da pubblicare, schema, Authentication, Edge Function, primo admin, «Collega progetto», link di collegamento, Site URL e Redirect URLs, verifiche).
+
+**Corretto**
+- Guida e README elencavano solo `index.html`, `app.js` e `style.css` fra i file da pubblicare: mancavano `icons.js`, `schede.js`, `theme.js`, `manifest.webmanifest`, `sw.js` e la cartella `icone/`. `theme.js` non compariva in nessun elenco.
+- La guida non diceva di creare il primo utente con **Auto Confirm User** (senza, l'accesso risponde «Email not confirmed») né di eseguire lo schema **prima** di creare utenti (altrimenti il profilo non nasce e l'app dice «Profilo non trovato»): ora c'è anche la query per rimediare.
+- I link di invito «scadono in circa 24 ore» solo se in Authentication → provider Email la durata (*Email OTP Expiration*) è 86400 secondi; su un progetto nuovo il valore proposto è più basso. Ora è fra i passi.
+- Il punto 0.4 del README indicava come Site URL l'indirizzo dell'app e non diceva dei Redirect URLs, al contrario della Guida e della finestra «Link di collegamento»: ora rimandano tutti al link di collegamento più l'indirizzo dell'app con `**`.
+- README, assistenza agli utenti: il bottone 🔑 non manda email, genera un link da girare a mano.
+- La Edge Function, rifiutando la password di un altro admin, rimandava a un «Password dimenticata» che nella schermata di accesso non esiste: ora indica il Dashboard o `gen-links.mjs`.
+- Guida, risoluzione problemi: un link che apre la pagina sbagliata può dipendere anche dai Redirect URLs.
 
 ### [5.5.0] — 2026-11-09
 
@@ -284,13 +300,113 @@ TimeTrack è una PWA, come Bomtrack: `manifest.webmanifest` (nome, colori, icone
 
 ---
 
+# Nuovo progetto Supabase da zero
+
+Per mettere in piedi un progetto Supabase nuovo (un secondo archivio, un'altra azienda, una prova) con l'app attuale. Non serve Node, non serve la migrazione dalla 1.x: bastano il Dashboard Supabase e l'hosting dell'app. L'ordine conta: **lo schema va eseguito prima di creare qualsiasi utente**.
+
+### 1. I file dell'app sull'hosting
+
+Pubblica nella stessa cartella, su **https** (serve per installare l'app e per i link di invito):
+
+| File | A cosa serve |
+|---|---|
+| `index.html` | la pagina |
+| `style.css` | la grafica |
+| `icons.js`, `app.js`, `schede.js`, `theme.js` | il programma: servono tutti e quattro (senza `schede.js`, per esempio, l'app si blocca appena fatto l'accesso; senza `theme.js` il tema non si cambia) |
+| `manifest.webmanifest`, `sw.js` | l'installazione come app (PWA) |
+| `icone/` (cartella intera: `icona.svg`, `icona-192.png`, `icona-512.png`, `icona-maskable-512.png`, `apple-touch-icon.png`) | le icone dell'app installata |
+
+Non vanno pubblicati `supabase/`, `migrations/`, `test/`, `.github/`, `.githooks/` e il README. Lo **stesso** `app.js` serve tutti i progetti Supabase: se l'app è già pubblicata per il primo progetto, per il secondo non va ripubblicato niente (ogni dispositivo sceglie a quale progetto collegarsi, vedi punto 7).
+
+### 2. Crea il progetto
+
+[Dashboard Supabase](https://supabase.com/dashboard) → **New project**: nome, password del database (conservala, all'app non serve), regione (per l'Italia una europea, es. Frankfurt). Fra le opzioni di sicurezza lascia attiva la **Data API** (l'app parla con il database solo da lì): in Project Settings → Data API lo schema `public` deve stare fra gli «Exposed schemas».
+
+### 3. Esegui lo schema
+
+SQL Editor → **New query** → incolla **tutto** `supabase/schema.sql` → **Run**.
+
+**Risultato atteso:** in fondo una tabella con **12 righe** (`profiles`, `clients`, `projects`, `project_finance`, `activities`, `rates`, `entries`, `entry_costs`, `app_settings`, `timers`, `project_templates`, `audit_log`), tutte con `rowsecurity = true`. Lo script crea anche funzioni, trigger, policy e la pubblicazione Realtime; non usa lo Storage. Si può rieseguire quando vuoi senza perdere dati.
+
+### 4. Impostazioni di Authentication
+
+Authentication → **Sign In / Providers**:
+- **Allow new users to sign up**: **disattivato** (gli account si creano solo dall'app, con l'invito);
+- provider **Email** attivo; dentro, **Minimum password length** = **8** (l'app chiede almeno 8 caratteri);
+- sempre nel provider Email, **Email OTP Expiration** = `86400` secondi: è la durata dei link di invito e di reimpostazione. Su un progetto nuovo il valore proposto è più basso (di solito un'ora), e la guida dell'app dice «scade in circa 24 ore» contando su questo valore;
+- **Confirm email** può restare com'è: gli invitati confermano aprendo il link, e il primo utente lo confermi a mano (punto 6).
+
+**SMTP non serve**: l'app non manda email, genera i link e li fai girare tu. Le URL di ritorno (Site URL e Redirect URLs) si impostano al punto 8, quando avrai il link di collegamento.
+
+### 5. Pubblica la Edge Function `invite-user`
+
+Serve per creare utenti e generare i link di invito e di reimpostazione dall'app. Senza, Gestione → Utenti → «+ Nuovo utente» e il bottone 🔑 rispondono con un errore.
+
+1. **Edge Functions** → **Deploy a new function** → **Via Editor**.
+2. Nome: `invite-user` (esattamente questo).
+3. Cancella il codice di esempio e incolla **tutto** `supabase/functions/invite-user/index.ts` → **Deploy**.
+4. **Disattiva la verifica JWT** («Verify JWT with legacy secret» / «Enforce JWT verification»: OFF, sia nel dialogo di deploy sia in Settings della funzione). La funzione controlla da sola che chi chiama sia un admin attivo.
+
+Le variabili `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` le dà Supabase da sé: non si aggiungono Secrets. La funzione usa `SUPABASE_ANON_KEY`, quindi in Project Settings → API Keys **non disattivare le chiavi legacy** («Disable legacy API keys»): senza, la creazione di un utente si ferma a metà.
+
+### 6. Crea il primo amministratore
+
+Authentication → **Users** → **Add user** → **Create new user**: la tua email, una password di almeno 8 caratteri e la spunta **Auto Confirm User** (senza, l'accesso risponde «Email not confirmed» e senza SMTP non arriva nessuna email per confermarla).
+
+Il **primo** utente di un progetto vuoto diventa da sé **admin attivo**; tutti quelli dopo nascono operatori sospesi finché un admin non li completa (o li crea dall'app, che lo fa subito). Controllo, nel SQL Editor:
+
+```sql
+select name, email, role, active from public.profiles;
+-- atteso: una riga, role = admin, active = true
+```
+
+Se la tabella è vuota hai creato l'utente prima di eseguire lo schema: il profilo non è nato. Rimedio (sostituisci l'email):
+
+```sql
+insert into public.profiles (id, name, email, role, active)
+select id, split_part(email, '@', 1), email, 'admin', true
+from auth.users where email = 'tua@email.it'
+on conflict (id) do update set role = 'admin', active = true;
+```
+
+### 7. Collega il tuo dispositivo e accedi
+
+1. Nel Dashboard prendi i due dati del progetto: l'**indirizzo** (`https://xxxx.supabase.co`, in Project Settings → Data API o dal pulsante **Connect** in alto) e la **chiave pubblica** (Project Settings → **API Keys** → *Publishable key*, `sb_publishable_…`; va bene anche la `anon` legacy). **Mai** la `service_role` o la *secret key*: quella resta nel Dashboard.
+2. Apri l'app: senza progetto collegato compare **Collega il progetto Supabase**. Incolla indirizzo e chiave → **Prova** (deve dire «Il progetto risponde») → **Collega**. Se il dispositivo era già collegato al primo progetto, sotto il modulo di accesso c'è «Progetto: … · **Cambia**», che lo scollega.
+3. Accedi con l'email e la password del punto 6. Dovresti vedere tutte le schede, compresa **Gestione**.
+4. Gestione → Utenti → ✏ sul tuo profilo: aggiungi **username** e scegli il **colore** (il profilo creato dal Dashboard non ha username).
+
+### 8. Link di collegamento e URL di ritorno
+
+1. Gestione → Utenti → 🔗 **Link di collegamento** → **Copia**. Ha la forma `https://tuodominio.it/timetrack/?supabase=https%3A%2F%2Fxxxx.supabase.co&chiave=sb_publishable_…` (va copiato dall'app pubblicata su https: aperta con un doppio clic, il link punterebbe al file sul tuo PC).
+2. Authentication → **URL Configuration**:
+   - **Site URL** = quel link di collegamento;
+   - **Redirect URLs** → Add URL: l'indirizzo dell'app seguito da `**` (es. `https://tuodominio.it/timetrack/**`).
+
+Così chi apre un invito o una reimpostazione su un dispositivo nuovo si ritrova l'app già collegata al progetto giusto. Con due progetti sulla stessa app, ognuno ha come Site URL **il suo** link di collegamento; i Redirect URLs sono uguali.
+
+### 9. Utenti e dati
+
+- **Colleghi**: Gestione → Utenti → **+ Nuovo utente (invito)** → nome, email, username, ruolo, colore → **Crea e genera link** → copia il link e giralo. Chi lo apre imposta la password ed entra. Per collegare un telefono già pronto basta il link di collegamento (o il suo QR, nella stessa finestra).
+- **Anagrafiche**: clienti, commesse con attività, tariffe (Gestione). Il contatore dei codici commessa parte da 1 in ogni progetto.
+- I dati di un progetto **non passano** all'altro: per copiare qualcosa c'è l'export JSON in Gestione → Backup, ma l'import fra progetti non esiste.
+
+### 10. Verifiche finali (5 minuti)
+
+- Registra un'ora di prova e cancellala; avvia e annulla un timer.
+- Crea un utente di prova, apri il suo invito in una finestra anonima, imposta la password: entra come operatore e vede solo le commesse assegnate a lui (o a tutti).
+- Da quell'operatore, le prove di sicurezza del punto 2.3 più sotto.
+- La nuvola in alto è verde e, aprendola, «Tempo reale: attivo».
+
+---
+
 # Aggiornare Supabase alla 4.0.0
 
 Da fare una volta, nell'ordine, quando si pubblica la 4.0.0:
 
 1. **Schema**: Dashboard → SQL Editor → New query → incolla tutto `supabase/schema.sql` → Run. Il risultato atteso è lo stesso del punto 0.3 (dalla 5.0.0, 12 righe con `rowsecurity = true`). Si può rieseguire: non tocca i dati.
 2. **Edge Function**: Dashboard → Edge Functions → `invite-user` → Code → incolla tutto `supabase/functions/invite-user/index.ts` → Deploy (verifica JWT sempre disattivata, vedi 2.2.1).
-3. **Pubblica** `app.js`, `index.html` e `style.css` sull'hosting.
+3. **Pubblica** sull'hosting i file dell'app (alla 4.0.0 erano `app.js`, `index.html` e `style.css`; l'elenco completo di oggi è in «Nuovo progetto Supabase da zero», punto 1).
 4. **Collega i dispositivi** (una volta per ognuno): apri l'app, scegli "Collega progetto" e inserisci l'indirizzo del progetto e la chiave pubblica (Dashboard → Project Settings → API Keys). Poi accedi da admin, vai in Gestione → Utenti → 🔗 **Link di collegamento**, copia il link e giralo ai colleghi: aprendolo hanno l'app già collegata. Il link ha questa forma: `https://tuodominio.it/timetrack/?supabase=https://xxxx.supabase.co&chiave=sb_publishable_…`
 5. **URL Configuration** (Authentication → URL Configuration): metti il link di collegamento come **Site URL**, e fra i **Redirect URLs** aggiungi l'indirizzo dell'app seguito da `**` (es. `https://tuodominio.it/timetrack/**`).
 
@@ -298,7 +414,7 @@ Da fare una volta, nell'ordine, quando si pubblica la 4.0.0:
 
 ## Come è organizzato Supabase (come in Bomtrack)
 
-- **Il progetto non sta nel codice**: indirizzo e chiave pubblica sono in `localStorage` su ogni dispositivo (`tt_supabase`), arrivati con il link di collegamento (`?supabase=…&chiave=…`) o inseriti a mano. Per un nuovo progetto Supabase basta eseguire lo schema, pubblicare la Edge Function, creare il primo utente dal Dashboard (diventa admin) e collegare i dispositivi.
+- **Il progetto non sta nel codice**: indirizzo e chiave pubblica sono in `localStorage` su ogni dispositivo (`tt_supabase`), arrivati con il link di collegamento (`?supabase=…&chiave=…`) o inseriti a mano. Per un nuovo progetto Supabase basta eseguire lo schema, pubblicare la Edge Function, creare il primo utente dal Dashboard (diventa admin) e collegare i dispositivi: la procedura completa è in «Nuovo progetto Supabase da zero» qui sopra.
 - `supabase/schema.sql` — l'unica fonte dello schema: tabelle, funzioni, trigger, RLS, Realtime. Rieseguibile.
 - `supabase/functions/invite-user/` — la Edge Function per creare utenti e generare link, con la service_role che non passa mai dal browser.
 - `test/schema.test.mjs` + `test/supabase-stub.sql` — lo schema caricato in un Postgres vero, con le chiamate fatte come un utente dell'app. In locale: `TIMETRACK_PG="host=localhost user=postgres" node --test test/schema.test.mjs` (senza la variabile i test si dichiarano saltati).
@@ -349,10 +465,11 @@ Nel Dashboard Supabase:
 
 1. **Authentication → Sign In / Providers** (o "Sign In / Up"):
    - **disattiva** "Allow new users to sign up" → nessuno può auto-registrarsi; gli account si creano solo per invito;
-   - in **Password**: imposta lunghezza minima **8** caratteri.
+   - nel provider **Email**: lunghezza minima della password **8** caratteri, e **Email OTP Expiration** `86400` (i link di invito durano 24 ore).
 2. **Authentication → URL Configuration**:
    - **Site URL** = l'indirizzo esatto a cui è pubblicata l'app (es. `https://tuodominio.it/timetrack/`).
      È l'indirizzo su cui atterrano i link di invito e di reset password: se è sbagliato, gli inviti non funzionano.
+     Dalla 4.0.0 qui va il **link di collegamento** e fra i Redirect URLs l'indirizzo dell'app seguito da `**` (vedi «Nuovo progetto Supabase da zero», punto 8).
 
 ### 0.5 Recupera le chiavi per lo script di migrazione
 
@@ -367,7 +484,7 @@ Il servizio email **integrato** di Supabase è solo per i test: manda **~2 email
 
 **Opzione A — Link di invito a mano (più semplice, zero configurazione)**
 Esegui la migrazione con l'opzione `--print-links`: lo script **non invia email** ma stampa a video un link di invito per ogni utente, da girare tu stesso via WhatsApp/Teams/email personale. I link scadono in ~24 ore, quindi distribuiscili subito dopo la migrazione.
-Nota: anche il bottone 🔑 (reset password) della nuova app usa le email, quindi con questa opzione i reset futuri saranno limitati a ~2/ora — accettabile per un team piccolo.
+Nota: alla 2.0.0 anche il bottone 🔑 (reset password) usava le email. Con la Edge Function `invite-user` (punto 2.2.1) il bottone genera un link da girare a mano, senza email e senza limiti.
 
 **Opzione B — SMTP personalizzato (più lavoro, soluzione definitiva)**
 Dashboard → **Project Settings → Authentication → SMTP Settings**: inserisci i dati SMTP di una casella aziendale (o un servizio gratuito come Brevo, ~300 email/giorno). Poi in **Authentication → Rate Limits** alza il limite email. Da quel momento inviti e reset password funzionano senza limiti pratici.
@@ -449,6 +566,8 @@ Sostituisci sul tuo hosting i file con le versioni nuove:
 - `app.js`
 - `style.css` (invariato, ma male non fa)
 
+(Questo era l'elenco della 2.0.0. Oggi i file sono di più: l'elenco completo è in «Nuovo progetto Supabase da zero», punto 1.)
+
 Il metodo dipende da dove è pubblicata l'app (FTP, cartella condivisa, ecc.): è una semplice copia di file.
 
 ### 1.5 Chiudi definitivamente il vecchio blob
@@ -472,7 +591,7 @@ Ora la anon key non può più leggere nulla del vecchio database. La tabella `ti
 
 ### 2.1 Assistenza agli utenti (primo giorno)
 
-- **"Non ho ricevuto l'invito"** → far controllare lo spam; se non c'è: Gestione → Utenti → **🔑** (invia email di reset password), che arriva sullo stesso indirizzo.
+- **"Non ho ricevuto l'invito"** → far controllare lo spam; se non c'è: Gestione → Utenti → **🔑**, che genera un link di reimpostazione da girare a mano (nessuna email).
 - **"Ho sbagliato a scrivere la password due volte"** → di nuovo il bottone **🔑** in Gestione → Utenti.
 - **"Link di invito scaduto"** → idem, il bottone **🔑** genera un nuovo link valido.
 

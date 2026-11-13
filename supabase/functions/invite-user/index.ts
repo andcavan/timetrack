@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     if (!target) return json(404, { error: "Utente non trovato" });
     if (target.role === "admin" && target.id !== profile.id) {
       return json(403, {
-        error: "La password di un altro amministratore non si reimposta da qui: usi «Password dimenticata» dalla schermata di accesso",
+        error: "La password di un altro amministratore non si reimposta da qui: si manda il link dal Dashboard Supabase (Authentication → Users) o con migrations/gen-links.mjs",
       });
     }
     const { data: au, error: auErr } = await admin.auth.admin.getUserById(id);
