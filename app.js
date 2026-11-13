@@ -4,7 +4,7 @@ const App = {};
 // ═══ VERSIONE APPLICAZIONE ═══
 // Sorgente unica della revisione: va incrementata a ogni modifica e
 // documentata nel Changelog del README (vedi sezione "Revisioni").
-const APP_VERSION='5.5.0';
+const APP_VERSION='5.5.1';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'v' + APP_VERSION; });
 });
@@ -1635,9 +1635,9 @@ function renderGuideTab(){
       <div class="guide-body">
         <h4>Architettura</h4>
         <ul>
-          <li><b>Frontend</b>: 3 file statici (<code>index.html</code>, <code>app.js</code>, <code>style.css</code>) pubblicati su hosting semplice; librerie da CDN con integrità verificata (SRI).</li>
+          <li><b>Frontend</b>: file statici pubblicati nella stessa cartella di un hosting semplice, su https: <code>index.html</code>, <code>style.css</code>, <code>icons.js</code>, <code>app.js</code>, <code>schede.js</code>, <code>theme.js</code>, <code>manifest.webmanifest</code>, <code>sw.js</code> e la cartella <code>icone/</code>. Librerie da CDN con integrità verificata (SRI).</li>
           <li><b>Backend</b>: progetto Supabase — Auth, Postgres con RLS, Realtime, e la Edge Function <code>invite-user</code>.</li>
-          <li><b>Schema e procedura completa</b>: nel repository, <code>supabase/schema.sql</code> (si può rieseguire a ogni versione) e <code>README.md</code>.</li>
+          <li><b>Schema e procedura completa</b>: nel repository, <code>supabase/schema.sql</code> (si può rieseguire a ogni versione) e <code>README.md</code>, che per un progetto nuovo ha la sezione «Nuovo progetto Supabase da zero».</li>
         </ul>
         <h4>Edge Function invite-user</h4>
         <ul>
@@ -1648,7 +1648,7 @@ function renderGuideTab(){
         <div class="g-warn"><b>Due errori già capitati, da non ripetere:</b><br>1) La verifica JWT del gateway ("Verify JWT with legacy secret") deve restare <b>disattivata</b> (scheda Settings della funzione e spunta nel dialogo di deploy): il progetto usa le nuove API keys e la verifica legacy respingerebbe ogni chiamata con <code>401 INVALID_CREDENTIALS</code>.<br>2) Se dopo un deploy i link non funzionano e l'errore è generico, controlla di non aver pubblicato il <b>codice di esempio</b> dell'editor al posto del file vero.</div>
         <h4>Impostazioni del progetto Supabase</h4>
         <ul>
-          <li><b>Authentication → Sign In / Up</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); password minimo 8 caratteri.</li>
+          <li><b>Authentication → Sign In / Providers</b>: registrazioni pubbliche disabilitate (gli account si creano solo dall'app); nel provider Email password minimo 8 caratteri e durata dei link (<i>Email OTP Expiration</i>) di 86400 secondi, cioè 24 ore.</li>
           <li><b>Authentication → URL Configuration → Site URL</b>: il <b>link di collegamento</b> (Gestione → Utenti → ${ico('link','tinted')}), cioè l'indirizzo esatto dell'app con il progetto: è dove atterrano i link quando non ne è indicato un altro.</li>
           <li><b>Niente SMTP</b> configurato (scelta voluta): nessuna email automatica, i link si distribuiscono a mano e non ci sono limiti di invio.</li>
           <li><b>Progetto e chiave non stanno nel codice</b> (come in Bomtrack): ogni dispositivo li tiene per sé, inseriti dalla schermata di accesso ("Collega progetto") o arrivati con il <b>link di collegamento</b> (Gestione → Utenti → ${ico('link','tinted')}). Lo stesso <code>app.js</code> funziona così con progetti Supabase diversi. L'app usa la chiave <b>pubblica</b> (<code>sb_publishable_…</code>); se venisse ruotata, ogni dispositivo va ricollegato con il nuovo link.</li>
@@ -1656,7 +1656,7 @@ function renderGuideTab(){
         </ul>
         <h4>Pubblicare una modifica dell'app</h4>
         <ol>
-          <li>Copia i file aggiornati (di solito <code>app.js</code>, eventualmente <code>index.html</code> e <code>style.css</code>) sull'hosting, sovrascrivendo i vecchi.</li>
+          <li>Copia i file aggiornati sull'hosting, sovrascrivendo i vecchi: quali, lo dice la voce della versione nel Changelog del README.</li>
           <li>Nel browser fai un <b>refresh forzato</b> (Ctrl+F5) per scaricare la nuova versione.</li>
         </ol>
         <h4>Strumenti di riserva (senza Edge Function)</h4>
@@ -1672,7 +1672,7 @@ function renderGuideTab(){
           <tr><td>"Generazione non riuscita (401: Invalid credentials)"</td><td>Il gateway della Edge Function sta rifiutando le chiamate: verifica JWT legacy attiva o chiave sbagliata. Vedi la sezione Configurazione tecnica.</td></tr>
           <tr><td>"Email già registrata" creando un utente</td><td>L'account esiste già: usa il bottone ${ico('key','tinted')} per generare un link di reimpostazione.</td></tr>
           <tr><td>Il link di invito non funziona</td><td>È scaduto (≈24h) o già usato: genera un nuovo link con ${ico('key','tinted')}.</td></tr>
-          <tr><td>Il link apre la pagina sbagliata</td><td>Site URL errata su Supabase (Authentication → URL Configuration).</td></tr>
+          <tr><td>Il link apre la pagina sbagliata</td><td>Site URL errata, o l'indirizzo dell'app con <code>**</code> manca fra i Redirect URLs (Authentication → URL Configuration).</td></tr>
           <tr><td>${ico('close','tinted')} Errore sync in alto</td><td>Problema di rete o permessi: ricarica la pagina; se persiste controlla lo stato di Supabase.</td></tr>
           <tr><td>Un operatore non vede una commessa</td><td>La commessa non è Attiva, oppure ha utenti assegnati e lui non è tra questi.</td></tr>
           <tr><td>Ore senza valore economico nei report</td><td>Alla data della registrazione non esisteva una tariffa applicabile: crea la tariffa con la validità giusta, anche retroattiva — le registrazioni già esistenti in quel periodo vengono ricalcolate automaticamente.</td></tr>
